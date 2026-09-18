@@ -6,6 +6,8 @@ This tool exposes the underlying Reindex-From-Snapshot (RFS) core library in an 
 
 The snapshot the application extracts the documents from can be local or in S3.  You'll need network access to the target cluster because the application uses the standard REST API on the cluster to ingest the extracted documents.
 
+If you need to investigate which documents failed during backfill and why, see the [failed document stream reference](../RFS/docs/FAILED_DOCUMENT_STREAM.md).
+
 ## How to use the tool
 
 You can kick off locally using Gradle. These worker are designed to be run multiple times to fully migrate a cluster.
