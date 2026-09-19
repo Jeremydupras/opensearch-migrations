@@ -6,7 +6,7 @@ This tool exposes the underlying Reindex-From-Snapshot (RFS) core library in an 
 
 The snapshot the application extracts the documents from can be local or in S3.  You'll need network access to the target cluster because the application uses the standard REST API on the cluster to ingest the extracted documents.
 
-If you need to investigate which documents failed during backfill and why, see the [failed document stream reference](../RFS/docs/FAILED_DOCUMENT_STREAM.md).
+If you need to investigate which documents failed during backfill and why, see the [failed document stream reference](../docs/failedDocumentStream.md).
 
 ## How to use the tool
 

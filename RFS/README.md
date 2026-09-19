@@ -4,7 +4,7 @@
 
 This library houses the core behavior for Reindex-From-Snapshot (RFS), a novel solution to migrating documents from one Elasticsearch/OpenSearch cluster to another.  At a high level, RFS improves the migration experience by: removing load from the source cluster during backfill migration (in comparison to normal reindexing), increasing the speed of backfill migration by parallelizing work by shard (in comparison to Data Pepper/OpenSearch Ingestion Service), enabling “hopping” across multiple major versions (in comparison to in-place upgrades), making pausing/resuming a migration trivial (in comparison to Data Pepper/OpenSearch Ingestion Service), and creating a migration path from post-fork versions of Elasticsearch to OpenSearch (not available any other way).  You can gain more context on the problem it solves by looking at [this RFC](https://github.com/opensearch-project/OpenSearch/issues/12667) and [this design doc](./docs/DESIGN.md).
 
-For backfill investigations, see the [failed document stream reference](./docs/FAILED_DOCUMENT_STREAM.md) for where terminal document failures are stored, how to inspect them, and where the implementation and tests live.
+For backfill investigations, see the [failed document stream reference](../docs/failedDocumentStream.md) for where terminal document failures are stored and how to inspect them.
 
 The library also contains useful code for: taking snapshots of Elasticsearch clusters, parsing the contents of Elasticsearch snapshots, migrating cluster settings and configuration, and migrating index settings and configuration.
 
