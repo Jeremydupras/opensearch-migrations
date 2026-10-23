@@ -81,6 +81,7 @@ functionName(jobName: jobNameOverride ?: null)
 
 | Cover File | Vars Function | Override Parameter |
 |------------|---------------|-------------------|
+| ciDeploySmokeTestCover.groovy | ciDeploySmokeTest | (none) |
 | cleanupDeploymentCover.groovy | cleanupDeployment | JOB_NAME_OVERRIDE |
 | dockerComposeE2ETestCover.groovy | dockerComposeE2ETest | JOB_NAME_OVERRIDE |
 | eksAOSSSearchIntegTestCover.groovy | eksAOSSIntegPipeline | JOB_NAME_OVERRIDE |
@@ -106,6 +107,8 @@ functionName(jobName: jobNameOverride ?: null)
 | k8sMatrixTestCover.groovy | k8sMatrixTest | JOB_NAME_OVERRIDE |
 | rfsDefaultE2ETestCover.groovy | rfsDefaultE2ETest | JOB_NAME_OVERRIDE |
 | solutionsCFNTestCover.groovy | solutionsCFNTest | JOB_NAME_OVERRIDE |
+
+`ciDeploySmokeTestCover.groovy` is a smoke test for the CI Jenkins itself (toolchain, Docker/cgroup v2, ECR pull-through cache, kind + kubectl + helm). It has no cadence or webhook; the CI infrastructure deployment runs it on a freshly launched agent (`NODE`, `DEPLOY_ID` parameters).
 
 The time-series and vector AOSS cover files are retained as manual compatibility entry points. Their periodic schedules are disabled; the search cover file runs the combined three-collection suite.
 
