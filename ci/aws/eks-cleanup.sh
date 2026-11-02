@@ -23,7 +23,7 @@ run_step() {
 }
 
 verify_dashboards_deleted() {
-    "$CI_AWS_DIR/verify-eks-dashboards.sh" delete --kube-context "$KUBE_CONTEXT" --stage "$STAGE"
+    "$CI_AWS_DIR/verify-eks-dashboards.sh" delete --kube-context "$KUBE_CONTEXT" --stage "${STAGE:?}"
 }
 
 teardown_ma_app() {
@@ -60,10 +60,19 @@ cleanup_eks_infra() {
         done
     done
 
-    # Orphaned EKS security groups hold ENIs that block the VPC delete.
-    local sgs sg sg_json ingress egress deleted
+    # Orphaned EKS security groups hold ENIs that block the VPC delete. Skip the cluster's own security group: it stays
+    # attached to the control plane until the cluster is deleted, so deleting it now always fails (Jenkins'
+    # cleanupEksInfra retried it for 10 minutes every run). The MA stack delete removes it with the cluster.
+    local sgs sg sg_json ingress egress deleted cluster_sg
+    cluster_sg=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" \
+            --query 'cluster.resourcesVpcConfig.clusterSecurityGroupId' --output text 2>/dev/null || true)
     sgs=$(aws ec2 describe-security-groups --filters "Name=tag:aws:eks:cluster-name,Values=$EKS_CLUSTER_NAME" \
             --query 'SecurityGroups[*].GroupId' --output text 2>/dev/null || true)
+    if [[ -n "$cluster_sg" && "$cluster_sg" != None ]]; then
+        log "Skipping the cluster security group $cluster_sg; it is deleted with the cluster"
+        sgs=$(tr -s '[:space:]' '\n' <<< "$sgs" | grep -vx "$cluster_sg" || true)
+    fi
+    [[ -z "$sgs" ]] && log "No orphaned EKS security groups"
     for sg in $sgs; do
         sg_json=$(aws ec2 describe-security-groups --group-ids "$sg" --query 'SecurityGroups[0]' --output json 2>/dev/null || echo '{}')
         ingress=$(jq -c '.IpPermissions // []' <<< "$sg_json")
