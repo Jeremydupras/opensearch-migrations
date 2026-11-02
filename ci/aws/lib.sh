@@ -28,8 +28,10 @@ state_load() {
     return 0
 }
 
-# Stage name: <base>-<pool letter><run id><attempt>, like Jenkins' <STAGE>-<p|m|r><build#>. The pool letter keeps
-# PR and main stacks apart; the run attempt keeps a re-run from colliding with leftovers of the first attempt.
+# Stage name: <base>-<pool letter><last 5 digits of run id><attempt>, like Jenkins' <STAGE>-<p|m|r><build#>. The pool
+# letter keeps PR and main stacks apart; the run attempt keeps a re-run from colliding with leftovers of the first
+# attempt. The cluster CDK app (amazon-opensearch-service-sample-cdk) allows at most 15 characters.
+MAX_STAGE_NAME_LENGTH=15
 stage_name() {
     local base="$1" pool_letter
     case "${CI_POOL:-pr}" in
@@ -37,8 +39,11 @@ stage_name() {
         release) pool_letter=r ;;
         *) pool_letter=p ;;
     esac
-    local run_id="${GITHUB_RUN_ID:-0000000}"
-    printf '%s-%s%s%s' "$base" "$pool_letter" "${run_id: -7}" "${GITHUB_RUN_ATTEMPT:-1}"
+    local run_id="${GITHUB_RUN_ID:-00000}"
+    local stage
+    stage=$(printf '%s-%s%s%s' "$base" "$pool_letter" "${run_id: -5}" "${GITHUB_RUN_ATTEMPT:-1}")
+    [[ ${#stage} -le $MAX_STAGE_NAME_LENGTH ]] || die "Stage name '$stage' is longer than $MAX_STAGE_NAME_LENGTH characters"
+    printf '%s' "$stage"
 }
 
 # ARN of the IAM role behind the current credentials (the session ARN can't be an EKS access entry).
