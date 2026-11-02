@@ -20,6 +20,31 @@ on:
         description: 'Shell command to run once the credentials are set'
         required: true
         type: string
+      cleanup:
+        description: 'Shell command that always runs after `run`, even if it failed or timed out (teardown)'
+        required: false
+        type: string
+        default: ''
+      setup-env:
+        description: 'Install the repo toolchain (Java, Gradle, Python + pipenv, Node) with .github/actions/setup-env'
+        required: false
+        type: boolean
+        default: false
+      artifact-path:
+        description: 'Path(s) to upload as a workflow artifact when the job ends (e.g. test logs)'
+        required: false
+        type: string
+        default: ''
+      artifact-name:
+        description: 'Name for the uploaded artifact'
+        required: false
+        type: string
+        default: 'aws-ci-logs'
+      run-timeout-minutes:
+        description: 'Timeout for the `run` step; leave room for `cleanup` inside timeout-minutes'
+        required: false
+        type: number
+        default: 270
       timeout-minutes:
         description: 'Job timeout; GitHub-hosted jobs stop at 360'
         required: false
@@ -47,6 +72,8 @@ jobs:
       contents: read
     env:
       POOL: ${{ inputs.pool }}
+      CI_POOL: ${{ inputs.pool }}
+      REGION: us-east-1
     steps:
       - name: Check pool and pick the role
         env:
@@ -81,6 +108,9 @@ jobs:
           ref: ${{ inputs.commit }}
           persist-credentials: false
 
+      - uses: ./.github/actions/setup-env
+        if: inputs.setup-env
+
       - name: Configure AWS credentials
         if: env.ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
@@ -96,9 +126,27 @@ jobs:
         run: echo "::warning::No role secret for pool '$POOL'; the command runs without AWS credentials"
 
       - name: Run
+        timeout-minutes: ${{ inputs.run-timeout-minutes }}
         env:
           RUN_COMMAND: ${{ inputs.run }}
         run: |
           set -o pipefail
           # Account IDs are masked in public logs, as in opensearch-ci.
           bash -euo pipefail -c "$RUN_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
+
+      - name: Cleanup
+        if: always() && inputs.cleanup != ''
+        timeout-minutes: 75
+        env:
+          CLEANUP_COMMAND: ${{ inputs.cleanup }}
+        run: |
+          set -o pipefail
+          bash -uo pipefail -c "$CLEANUP_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
+
+      - name: Upload logs
+        if: always() && inputs.artifact-path != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+          if-no-files-found: ignore

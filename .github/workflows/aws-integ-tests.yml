@@ -1,0 +1,61 @@
+---
+# AWS integration tests, run from GitHub Actions through the OIDC roles in the CI test account (replaces the AWS jobs
+# in jenkins_tests.yml). Each test is a script under ci/aws/ that runs inside aws-ci-job.yml; its teardown always runs.
+#   main: manual runs (and, later, a schedule) use osm-ci-main.
+#   PRs:  a maintainer adds the test's run-* label, then approves the run in migrations-ci-pr; uses osm-ci-pr.
+name: AWS integ tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Test to run'
+        type: choice
+        options:
+          - eks-integ
+        default: eks-integ
+  pull_request_target:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  sanitize-input:
+    uses: ./.github/workflows/sanitize-repo-details.yml
+
+  eks-integ-gate:
+    if: github.event_name == 'pull_request_target'
+    uses: ./.github/workflows/aws-ci-pr-gate.yml
+    permissions:
+      issues: read
+      pull-requests: read
+    with:
+      label: run-eks-tests
+
+  eks-integ-test:
+    needs: [sanitize-input, eks-integ-gate]
+    if: |
+      always() && needs.sanitize-input.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && inputs.test == 'eks-integ') ||
+        needs.eks-integ-gate.outputs.allowed == 'true')
+    uses: ./.github/workflows/aws-ci-job.yml
+    concurrency:
+      group: aws-integ-eks-integ-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      commit: ${{ needs.sanitize-input.outputs.commit_hash }}
+      setup-env: true
+      run: ./ci/aws/eks-integ-test.sh --source-version ES_7.10 --target-version OS_1.3 --test-ids 0001,0002
+      cleanup: ./ci/aws/eks-cleanup.sh
+      run-timeout-minutes: 210
+      timeout-minutes: 300
+      artifact-path: libraries/testAutomation/logs
+      artifact-name: eks-integ-logs
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}

@@ -109,6 +109,15 @@ describe('CiInfraStack', () => {
         ]);
     });
 
+    test('boundary blocks only the infra CDK bootstrap roles, leaving the osmtest bootstrap to tests', () => {
+        const [boundary] = Object.values(synth().findResources('AWS::IAM::ManagedPolicy', {
+            Properties: { ManagedPolicyName: 'osm-ci-test-boundary' },
+        }));
+        const statement = boundary.Properties.PolicyDocument.Statement
+            .find((s: { Sid: string }) => s.Sid === 'NoCdkBootstrapRoles');
+        expect(statement.Resource).toBe('arn:aws:iam::111122223333:role/cdk-hnb659fds-*');
+    });
+
     test('infra deploy role can only assume the CDK bootstrap roles', () => {
         const template = synth();
         template.hasResourceProperties('AWS::IAM::Role', {

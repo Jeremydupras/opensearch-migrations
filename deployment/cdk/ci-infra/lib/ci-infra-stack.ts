@@ -14,6 +14,10 @@ export const PR_ENVIRONMENT = 'migrations-ci-pr';
 export const INFRA_ENVIRONMENT = 'migrations-ci-infra';
 
 export const TEST_JOB_WORKFLOW = 'aws-ci-job.yml';
+
+// CDK bootstrap qualifiers: the default one deploys this stack; tests deploy their CDK apps with their own.
+export const INFRA_CDK_QUALIFIER = 'hnb659fds';
+export const TEST_CDK_QUALIFIER = 'osmtest';
 export const INFRA_DEPLOY_WORKFLOW = 'deploy-ci-infra.yml';
 
 // GitHub-hosted jobs stop at 6h, and every ported test fits inside that.
@@ -70,11 +74,13 @@ export class CiInfraStack extends Stack {
                     ],
                 }),
                 new PolicyStatement({
-                    // The CDK bootstrap roles carry admin rights, so assuming them would step outside this boundary.
+                    // The default CDK bootstrap (qualifier hnb659fds) deploys this stack and its execution role has
+                    // admin rights with no boundary. Tests use their own bootstrap (qualifier osmtest), whose
+                    // execution role carries this boundary: cdk bootstrap --custom-permissions-boundary osm-ci-test-boundary.
                     sid: 'NoCdkBootstrapRoles',
                     effect: Effect.DENY,
                     actions: ['sts:AssumeRole'],
-                    resources: [`arn:aws:iam::${this.account}:role/cdk-*`],
+                    resources: [`arn:aws:iam::${this.account}:role/cdk-${INFRA_CDK_QUALIFIER}-*`],
                 }),
                 new PolicyStatement({
                     sid: 'NoChangesToThisStack',
@@ -137,7 +143,7 @@ export class CiInfraStack extends Stack {
         });
         infraDeployRole.addToPolicy(new PolicyStatement({
             actions: ['sts:AssumeRole'],
-            resources: [`arn:aws:iam::${this.account}:role/cdk-hnb659fds-*-${this.account}-${this.region}`],
+            resources: [`arn:aws:iam::${this.account}:role/cdk-${INFRA_CDK_QUALIFIER}-*-${this.account}-${this.region}`],
         }));
 
         new CfnOutput(this, 'MainTestRoleArn', { value: mainRole.roleArn, description: 'Secret MIGRATIONS_CI_MAIN_ROLE' });

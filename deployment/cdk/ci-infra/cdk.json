@@ -4,6 +4,6 @@
     "githubRepository": "opensearch-project/opensearch-migrations",
     "githubSubjectPrefix": "repo:opensearch-project/opensearch-migrations",
     "pinWorkflowClaims": true,
-    "testRoleManagedPolicyArns": ["arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"]
+    "testRoleManagedPolicyArns": ["arn:aws:iam::aws:policy/AdministratorAccess"]
   }
 }
