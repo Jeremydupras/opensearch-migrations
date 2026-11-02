@@ -1,0 +1,104 @@
+---
+# Runs one command in the AWS test account with short-lived OIDC credentials (the opensearch-ci deploy-stacks.yml
+# pattern). The IAM roles trust only jobs from this file on main, in these environments:
+#   pool 'main' -> environment migrations-ci-main -> role osm-ci-main (push, schedule and dispatch on main only)
+#   pool 'pr'   -> environment migrations-ci-pr   -> role osm-ci-pr   (every run waits for a maintainer's approval)
+# Callers on pull_request_target must pass the aws-ci-pr-gate.yml check first. Don't call this from merge_group.
+name: AWS CI job
+on:
+  workflow_call:
+    inputs:
+      pool:
+        description: "'main' or 'pr'"
+        required: true
+        type: string
+      commit:
+        description: 'Commit to check out (use the sanitize-repo-details.yml output)'
+        required: true
+        type: string
+      run:
+        description: 'Shell command to run once the credentials are set'
+        required: true
+        type: string
+      timeout-minutes:
+        description: 'Job timeout; GitHub-hosted jobs stop at 360'
+        required: false
+        type: number
+        default: 360
+      print-oidc-claims:
+        description: 'Print the non-secret claims of the OIDC token (never the token)'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE:
+        required: false
+      MIGRATIONS_CI_PR_ROLE:
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # PR events always land in migrations-ci-pr, whatever pool the caller asked for.
+    environment: ${{ (inputs.pool == 'main' && github.event_name != 'pull_request_target' && github.event_name != 'pull_request') && 'migrations-ci-main' || 'migrations-ci-pr' }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      POOL: ${{ inputs.pool }}
+    steps:
+      - name: Check pool and pick the role
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+          PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+        run: |
+          case "$POOL" in
+            pr) role="$PR_ROLE" ;;
+            main)
+              if [[ "$EVENT_NAME" == pull_request* || "$EVENT_NAME" == merge_group ]]; then
+                echo "::error::pool 'main' can't be used from $EVENT_NAME"
+                exit 1
+              fi
+              role="$MAIN_ROLE" ;;
+            *) echo "::error::pool must be 'main' or 'pr', got '$POOL'"; exit 1 ;;
+          esac
+          echo "ROLE_ARN=$role" >> "$GITHUB_ENV"
+
+      - name: Print OIDC claims
+        if: inputs.print-oidc-claims
+        run: |
+          set -euo pipefail
+          token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          payload=$(cut -d. -f2 <<< "$token" | tr '_-' '/+')
+          while (( ${#payload} % 4 )); do payload+="="; done
+          base64 -d <<< "$payload" | jq '{sub, aud, environment, ref, event_name, repository, job_workflow_ref}'
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        if: env.ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          role-session-name: osm-ci-${{ inputs.pool }}-${{ github.run_id }}
+          role-duration-seconds: 21600
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: No role configured
+        if: env.ROLE_ARN == ''
+        run: echo "::warning::No role secret for pool '$POOL'; the command runs without AWS credentials"
+
+      - name: Run
+        env:
+          RUN_COMMAND: ${{ inputs.run }}
+        run: |
+          set -o pipefail
+          # Account IDs are masked in public logs, as in opensearch-ci.
+          bash -euo pipefail -c "$RUN_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'

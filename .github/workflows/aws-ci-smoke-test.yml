@@ -1,0 +1,77 @@
+---
+# Proves the GitHub -> AWS wiring: main runs get osm-ci-main; PRs get osm-ci-pr only after a maintainer applies
+# run-aws-smoke-test and approves the run. Before the role secrets exist it prints the OIDC claims only.
+name: AWS CI smoke test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/aws-ci-*.yml'
+      - 'deployment/cdk/ci-infra/**'
+  pull_request_target:
+    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
+
+jobs:
+  pr-gate:
+    if: github.event_name == 'pull_request_target'
+    uses: ./.github/workflows/aws-ci-pr-gate.yml
+    permissions:
+      issues: read
+      pull-requests: read
+    with:
+      label: run-aws-smoke-test
+
+  sanitize-input:
+    uses: ./.github/workflows/sanitize-repo-details.yml
+
+  smoke-main:
+    if: github.event_name != 'pull_request_target'
+    needs: sanitize-input
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: main
+      commit: ${{ needs.sanitize-input.outputs.commit_hash }}
+      run: |
+        if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+          aws sts get-caller-identity --query Arn --output text
+        else
+          echo "No AWS credentials yet; see the OIDC claims above"
+        fi
+      timeout-minutes: 10
+      print-oidc-claims: true
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+
+  smoke-pr:
+    needs: [pr-gate, sanitize-input]
+    if: needs.pr-gate.outputs.allowed == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: pr
+      commit: ${{ needs.sanitize-input.outputs.commit_hash }}
+      run: |
+        if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+          aws sts get-caller-identity --query Arn --output text
+        else
+          echo "No AWS credentials yet; see the OIDC claims above"
+        fi
+      timeout-minutes: 10
+      print-oidc-claims: true
+    secrets:
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}

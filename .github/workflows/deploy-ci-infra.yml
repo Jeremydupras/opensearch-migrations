@@ -1,0 +1,110 @@
+---
+# Deploys deployment/cdk/ci-infra (the GitHub OIDC roles for the AWS tests), following opensearch-ci's
+# deploy-stacks.yml: credentials through OIDC, a masked `cdk diff`, a maintainer approval issue, then `cdk deploy`.
+# Runs on demand from main in the migrations-ci-infra environment (required reviewers; main only). It isn't triggered
+# by tags because release-drafter.yml already runs on every tag.
+name: Deploy CI infra
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: migrations-ci-infra
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    defaults:
+      run:
+        working-directory: deployment/cdk/ci-infra
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.x
+
+      - name: Install, lint and test
+        run: |
+          npm ci
+          npm test
+
+      - id: get_approvers
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          result-encoding: json
+          script: |
+            const collaborators = await github.paginate(github.rest.repos.listCollaborators, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              affiliation: 'all',
+              per_page: 100,
+            });
+            return collaborators.filter((c) => c.permissions.maintain || c.permissions.admin).map((c) => c.login);
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
+        with:
+          role-to-assume: ${{ secrets.MIGRATIONS_CI_INFRA_DEPLOY_ROLE }}
+          role-session-name: osm-ci-infra-deploy-${{ github.run_id }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Create change set for approval
+        id: stack_diff
+        run: |
+          set -o pipefail
+          npx cdk diff osm-ci-infra 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g' > ci_infra_diff.txt
+
+          DIFF_SIZE=$(wc -c < ci_infra_diff.txt)
+          if [ "$DIFF_SIZE" -gt 40000 ]; then
+            echo "diff_summary=Large changeset detected (${DIFF_SIZE} bytes). Full diff available in workflow artifacts." >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "diff_summary<<EOF"
+              cat ci_infra_diff.txt
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload diff as artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ci-infra-stack-diff
+          path: deployment/cdk/ci-infra/ci_infra_diff.txt
+          retention-days: 30
+
+      - name: Approve or deny change set
+        uses: trstringer/manual-approval@74d99dff7380e3e4b122d4ededcbca2b6ce59367 # v1
+        with:
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          approvers: ${{ join(fromJSON(steps.get_approvers.outputs.result), ', ') }}
+          minimum-approvals: 1
+          issue-title: 'Request to approve/deny CI infra stack deployment'
+          issue-body: |
+            ## CI infra stack deployment request
+
+            **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            <details>
+            <summary>Change set</summary>
+
+            ```
+            ${{ steps.stack_diff.outputs.diff_summary }}
+            ```
+
+            </details>
+
+      - name: Deploy
+        run: npx cdk deploy osm-ci-infra --require-approval=never

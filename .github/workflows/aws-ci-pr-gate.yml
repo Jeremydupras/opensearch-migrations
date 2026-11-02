@@ -1,0 +1,75 @@
+---
+# Decides whether a pull_request_target run may go on to the AWS test account.
+# A PR reaches AWS only if a user with write, maintain or admin permission applied the run-* label (GitHub lets users
+# with only Triage add labels, so the label alone isn't enough). Jobs that pass this gate still wait for a maintainer
+# to approve the run in the migrations-ci-pr environment.
+name: AWS CI PR gate
+on:
+  workflow_call:
+    inputs:
+      label:
+        description: 'Label that opts a PR into this test, e.g. run-eks-tests'
+        required: true
+        type: string
+    outputs:
+      allowed:
+        description: "'true' if a maintainer applied the label"
+        value: ${{ jobs.gate.outputs.allowed }}
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: read
+      pull-requests: read
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - id: check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          GATE_LABEL: ${{ inputs.label }}
+        with:
+          script: |
+            const label = process.env.GATE_LABEL;
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+
+            const deny = (reason) => {
+              core.notice(`Not running AWS tests for #${pr.number}: ${reason}`);
+              core.setOutput('allowed', 'false');
+            };
+
+            if (context.eventName !== 'pull_request_target' || !pr) {
+              return deny(`unsupported event ${context.eventName}`);
+            }
+
+            // Who applied the label: the sender of this labeled event, or the last user who applied it before a push.
+            let labeler;
+            if (context.payload.action === 'labeled') {
+              if (context.payload.label.name !== label) {
+                return deny(`label '${context.payload.label.name}' is not '${label}'`);
+              }
+              labeler = context.payload.sender.login;
+            } else {
+              if (!pr.labels.some((l) => l.name === label)) {
+                return deny(`PR does not have the '${label}' label`);
+              }
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                owner, repo, issue_number: pr.number, per_page: 100,
+              });
+              const applied = events.filter((e) => e.event === 'labeled' && e.label && e.label.name === label);
+              if (applied.length === 0) {
+                return deny(`could not find who applied '${label}'`);
+              }
+              labeler = applied[applied.length - 1].actor.login;
+            }
+
+            // `permission` folds maintain into write and triage into read.
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: labeler });
+            if (!['admin', 'write'].includes(data.permission)) {
+              return deny(`'${label}' was applied by ${labeler}, who has ${data.role_name} permission`);
+            }
+
+            core.info(`'${label}' applied by ${labeler} (${data.role_name}); the run still needs approval in migrations-ci-pr`);
+            core.setOutput('allowed', 'true');
