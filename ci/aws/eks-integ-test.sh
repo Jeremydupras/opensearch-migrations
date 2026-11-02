@@ -56,27 +56,8 @@ state_load
 [[ $ma_rc -eq 0 ]] || die "Migration Assistant bootstrap failed (rc=$ma_rc)"
 
 log "Creating source/target cluster configmaps"
-details="$REPO_ROOT/test/tmp/cluster-details-$stage.json"
-write_configmap() {
-    local role="$1" version="$2" endpoint json
-    endpoint=$(jq -r --arg r "$role" '.[$r].endpoint' "$details")
-    if [[ "$role" == source ]]; then
-        json=$(jq -n --arg e "$endpoint" --arg region "$REGION" --arg v "$version" \
-            '{endpoint: $e, allow_insecure: true, sigv4: {region: $region, service: "es"}, version: $v}')
-    else
-        json=$(jq -n --arg e "$endpoint" --arg region "$REGION" \
-            '{endpoint: $e, allow_insecure: true, sigv4: {region: $region, service: "es"}}')
-    fi
-    printf '%s' "$json" > "/tmp/$role-cluster-config.json"
-    local name expanded
-    expanded=$(expand_version "$version")
-    name="$role-$expanded-migration-config"
-    kubectl --context="$KUBE_CONTEXT" create configmap "$name" --from-file=cluster-config="/tmp/$role-cluster-config.json" \
-        --namespace ma --dry-run=client -o yaml | kubectl --context="$KUBE_CONTEXT" apply -f -
-    kubectl --context="$KUBE_CONTEXT" -n ma get configmap "$name" -o yaml
-}
-write_configmap source "$source_version"
-write_configmap target "$target_version"
+"$CI_AWS_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
+    --source-version "$source_version" --target-version "$target_version"
 
 log "Validating CloudWatch dashboards"
 "$CI_AWS_DIR/verify-eks-dashboards.sh" create --kube-context "$KUBE_CONTEXT" --stage "$stage"

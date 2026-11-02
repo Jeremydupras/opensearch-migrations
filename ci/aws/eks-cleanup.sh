@@ -123,6 +123,17 @@ if [[ -n "${CLUSTER_STACK_NAME:-}" && "${CLUSTER_INSIDE_MA_VPC:-false}" != true 
 fi
 [[ -n "${KUBE_CONTEXT:-}" ]] && kubectl config delete-context "$KUBE_CONTEXT" >/dev/null 2>&1
 
+# Log groups outlive the stacks (e.g. /migration-assistant-<stage>-<region>/logs); delete this run's.
+delete_log_groups() {
+    local group
+    for group in $(aws logs describe-log-groups --query "logGroups[?contains(logGroupName, '${STAGE:?}')].logGroupName" \
+                     --output text 2>/dev/null); do
+        log "Deleting log group $group"
+        aws logs delete-log-group --log-group-name "$group" || return 1
+    done
+}
+[[ -n "${STAGE:-}" ]] && run_step "log groups" delete_log_groups
+
 leftover=()
 for stack in "$MA_STACK_NAME" ${CLUSTER_STACK_NAME:+"$CLUSTER_STACK_NAME"}; do
     status=$(stack_status "$stack")
