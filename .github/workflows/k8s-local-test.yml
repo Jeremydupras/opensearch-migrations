@@ -27,6 +27,16 @@ on:
         required: false
         type: boolean
         default: false
+      ref:
+        description: 'Ref to test (default: the triggering commit)'
+        required: false
+        type: string
+        default: ''
+      ci-files-ref:
+        description: 'Ref to take the GitHub-runner CI files from (CI_FILES below), for testing an older release tag'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -36,6 +46,12 @@ env:
   KIND_VERSION: 'v0.31.0'
   KIND_NODE_IMAGE: 'kindest/node:v1.35.1@sha256:05d7bcdefbda08b4e038f644c4df690cdac3fba8b06f8289f30e10026720a1ab'
   KIND_CLUSTER_NAME: 'ma'
+  # Files that let the tests run on GitHub-hosted runners (#3491). Releases tagged before that PR lack them.
+  CI_FILES: >-
+    .github/scripts/registry-cache.sh
+    buildImages/backends/dockerHostedBuildkit.sh
+    deployment/k8s/charts/aggregates/migrationAssistantWithArgo/valuesForLocalK8s.yaml
+    migrationConsole/lib/integ_test/integ_test/test_cases/basic_tests.py
 
 jobs:
   k8s-local-test:
@@ -48,6 +64,17 @@ jobs:
       TEST_IDS: ${{ inputs.test-ids }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Use the CI files from ${{ inputs.ci-files-ref }}
+        if: inputs.ci-files-ref != ''
+        env:
+          CI_FILES_REF: ${{ inputs.ci-files-ref }}
+        run: |
+          git fetch --depth 1 origin "$CI_FILES_REF"
+          # shellcheck disable=SC2086
+          git checkout FETCH_HEAD -- $CI_FILES
+          git status --short
       - uses: ./.github/actions/setup-env
         with:
           gradle-cache-enabled: true

@@ -2,7 +2,8 @@
 # AWS integration tests, run from GitHub Actions through the OIDC roles in the CI test account (replaces the AWS jobs
 # in jenkins_tests.yml). Each test is a script under ci/aws/ run by aws-ci-job.yml; its teardown always runs, and every
 # run deploys into its own stage.
-#   Manual runs (and, later, schedules) use osm-ci-main. "all" runs every test Jenkins ran periodically.
+#   Scheduled runs (twice a day, the "all" set) and manual runs use osm-ci-main. "all" runs every test Jenkins ran
+#   periodically.
 #   Release canary: test the latest x.y.z release tag, with the ci/aws scripts from this run's ref.
 #   PRs: a maintainer adds the test's run-* label, then approves the run in migrations-ci-pr; uses osm-ci-pr.
 #        rfs-default, solutions-cfn-create-vpc and the AOSS time-series/vector tests have no PR trigger, as on Jenkins.
@@ -37,6 +38,9 @@ on:
         default: false
   pull_request_target:
     types: [labeled, synchronize, reopened]
+  schedule:
+    # Twice a day on main: every test in "all". Off the hour, as GitHub delays runs at the top of the hour.
+    - cron: '17 6,18 * * *'
 
 permissions:
   contents: read
@@ -82,6 +86,7 @@ jobs:
     needs: [resolve-ref, eks-integ-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-integ' || inputs.test == 'all')) ||
         needs.eks-integ-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -120,6 +125,7 @@ jobs:
     needs: [resolve-ref, eks-cfn-create-vpc-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-cfn-create-vpc' || inputs.test == 'all')) ||
         needs.eks-cfn-create-vpc-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -156,6 +162,7 @@ jobs:
     needs: [resolve-ref, eks-cfn-import-vpc-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-cfn-import-vpc' || inputs.test == 'all')) ||
         needs.eks-cfn-import-vpc-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -192,6 +199,7 @@ jobs:
     needs: [resolve-ref, eks-cdc-full-e2e-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-cdc-full-e2e' || inputs.test == 'all')) ||
         needs.eks-cdc-full-e2e-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -230,6 +238,7 @@ jobs:
     needs: [resolve-ref, eks-cdc-aoss-e2e-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-cdc-aoss-e2e' || inputs.test == 'all')) ||
         needs.eks-cdc-aoss-e2e-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -268,6 +277,7 @@ jobs:
     needs: [resolve-ref, eks-cdc-k6-load-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-cdc-k6-load' || inputs.test == 'all')) ||
         needs.eks-cdc-k6-load-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -306,6 +316,7 @@ jobs:
     needs: [resolve-ref, eks-aoss-search-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-aoss-search' || inputs.test == 'all')) ||
         needs.eks-aoss-search-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -398,6 +409,7 @@ jobs:
     needs: [resolve-ref, eks-byos-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-byos' || inputs.test == 'all')) ||
         needs.eks-byos-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -436,6 +448,7 @@ jobs:
     needs: [resolve-ref, eks-isolated-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-isolated' || inputs.test == 'all')) ||
         needs.eks-isolated-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -474,6 +487,7 @@ jobs:
     needs: [resolve-ref, full-es68-gate]
     if: |
       always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
         (github.event_name == 'workflow_dispatch' && (inputs.test == 'full-es68' || inputs.test == 'all')) ||
         needs.full-es68-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/aws-ci-job.yml
@@ -500,7 +514,8 @@ jobs:
   rfs-default-test:
     needs: [resolve-ref]
     if: |
-      github.event_name == 'workflow_dispatch' && (inputs.test == 'rfs-default' || inputs.test == 'all')
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.test == 'rfs-default' || inputs.test == 'all'))
     uses: ./.github/workflows/aws-ci-job.yml
     concurrency:
       group: aws-integ-rfs-default-${{ github.event.pull_request.number || github.run_id }}
@@ -525,7 +540,8 @@ jobs:
   solutions-cfn-create-vpc-test:
     needs: [resolve-ref]
     if: |
-      github.event_name == 'workflow_dispatch' && (inputs.test == 'solutions-cfn-create-vpc' || inputs.test == 'all')
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.test == 'solutions-cfn-create-vpc' || inputs.test == 'all'))
     uses: ./.github/workflows/aws-ci-job.yml
     concurrency:
       group: aws-integ-solutions-cfn-create-vpc-${{ github.event.pull_request.number || github.run_id }}
