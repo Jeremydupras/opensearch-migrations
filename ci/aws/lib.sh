@@ -129,3 +129,25 @@ install_ecs_exec_tools() {
 # This account's copy of the snapshot library (copied once from s3://migrations-snapshots-library-us-east-1 in the old
 # test account; the bucket is defined in deployment/cdk/ci-infra).
 snapshot_library() { printf 's3://migrations-snapshots-library-%s-%s' "$(account_id)" "$REGION"; }
+
+# Log groups outlive the stacks (e.g. /migration-assistant-<stage>-<region>/logs). A passing run deletes its own; a run
+# whose test failed, timed out or was cancelled keeps them for FAILED_RUN_LOG_RETENTION_DAYS so maintainers can read
+# the pod logs in CloudWatch. RUN_OUTCOME is the Run step's outcome, from aws-ci-job.yml; unset counts as success.
+FAILED_RUN_LOG_RETENTION_DAYS=14
+cleanup_log_groups() {
+    local match group status=0
+    for match in "$@"; do
+        for group in $(aws logs describe-log-groups --query "logGroups[?contains(logGroupName, '$match')].logGroupName" \
+                         --output text 2>/dev/null); do
+            if [[ "${RUN_OUTCOME:-success}" == success ]]; then
+                log "Deleting log group $group"
+                aws logs delete-log-group --log-group-name "$group" || status=1
+            else
+                log "Test ${RUN_OUTCOME}: keeping log group $group for $FAILED_RUN_LOG_RETENTION_DAYS days"
+                aws logs put-retention-policy --log-group-name "$group" \
+                    --retention-in-days "$FAILED_RUN_LOG_RETENTION_DAYS" || status=1
+            fi
+        done
+    done
+    return "$status"
+}

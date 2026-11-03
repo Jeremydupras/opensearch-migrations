@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Always-run teardown for cdk-integ-test.sh: destroys the run's migration and source stacks and its log groups.
+# Always-run teardown for cdk-integ-test.sh: destroys the run's migration and source stacks, and deletes its log groups (kept 14 days if the test failed).
 set -uo pipefail
 source "$(dirname "$0")/lib.sh"
 state_load
@@ -20,9 +20,7 @@ rc=$?
 leftover=$(aws cloudformation list-stacks \
     --query "StackSummaries[?StackStatus!='DELETE_COMPLETE' && contains(StackName, '$CDK_INTEG_STAGE')].[StackName,StackStatus]" \
     --output text)
-for group in $(aws logs describe-log-groups --query "logGroups[?contains(logGroupName, '$CDK_INTEG_STAGE')].logGroupName" --output text 2>/dev/null); do
-    aws logs delete-log-group --log-group-name "$group" || true
-done
+cleanup_log_groups "$CDK_INTEG_STAGE" || true
 if [[ -n "$leftover" ]]; then
     echo "::error::Stacks still present after cleanup: $leftover"
     exit 1

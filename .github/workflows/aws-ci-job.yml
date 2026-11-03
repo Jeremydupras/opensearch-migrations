@@ -176,6 +176,8 @@ jobs:
         timeout-minutes: 75
         env:
           CLEANUP_COMMAND: ${{ inputs.cleanup }}
+          # Failed runs keep their CloudWatch log groups for 14 days (cleanup_log_groups in ci/aws/lib.sh).
+          RUN_OUTCOME: ${{ steps.run.outcome }}
         run: |
           set -o pipefail
           bash -uo pipefail -c "$CLEANUP_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'

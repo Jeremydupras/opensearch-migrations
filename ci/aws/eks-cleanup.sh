@@ -174,18 +174,8 @@ for stack in ${STACKS_AFTER_MA:-}; do
 done
 [[ -n "${KUBE_CONTEXT:-}" ]] && kubectl config delete-context "$KUBE_CONTEXT" >/dev/null 2>&1
 
-# Log groups outlive the stacks (e.g. /migration-assistant-<stage>-<region>/logs); delete this run's.
-delete_log_groups() {
-    local group match
-    for match in "${STAGE:?}" ${EXTRA_LOG_STAGES:-}; do
-        for group in $(aws logs describe-log-groups --query "logGroups[?contains(logGroupName, '$match')].logGroupName" \
-                         --output text 2>/dev/null); do
-            log "Deleting log group $group"
-            aws logs delete-log-group --log-group-name "$group" || return 1
-        done
-    done
-}
-[[ -n "${STAGE:-}" ]] && run_step "log groups" delete_log_groups
+# shellcheck disable=SC2086 # EXTRA_LOG_STAGES is a space-separated list
+[[ -n "${STAGE:-}" ]] && run_step "log groups" cleanup_log_groups "$STAGE" ${EXTRA_LOG_STAGES:-}
 
 leftover=()
 if [[ -n "${ISOLATED_VPC_ID:-}" ]] && aws ec2 describe-vpcs --vpc-ids "$ISOLATED_VPC_ID" >/dev/null 2>&1; then
