@@ -46,11 +46,17 @@ permissions:
   contents: read
 
 jobs:
+  # On PRs, nothing reads PR data until at least one test's gate allows the run (sanitize-repo-details.yml reads the
+  # PR's branch name). Unlabeled PRs only run the gates, which read the event in JavaScript and call the GitHub API.
   sanitize-input:
+    needs: [eks-integ-gate, eks-cfn-create-vpc-gate, eks-cfn-import-vpc-gate, eks-cdc-full-e2e-gate, eks-cdc-aoss-e2e-gate, eks-cdc-k6-load-gate, eks-aoss-search-gate, eks-byos-gate, eks-isolated-gate, full-es68-gate]
+    if: |
+      !cancelled() && (github.event_name != 'pull_request_target' || contains(needs.*.outputs.allowed, 'true'))
     uses: ./.github/workflows/sanitize-repo-details.yml
 
   resolve-ref:
     needs: sanitize-input
+    if: "!cancelled() && needs.sanitize-input.result == 'success'"
     runs-on: ubuntu-24.04
     outputs:
       commit: ${{ steps.ref.outputs.commit }}
@@ -342,6 +348,7 @@ jobs:
   eks-aoss-timeseries-test:
     needs: [resolve-ref]
     if: |
+      always() && needs.resolve-ref.result == 'success' &&
       github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-aoss-timeseries')
     uses: ./.github/workflows/aws-ci-job.yml
     concurrency:
@@ -368,6 +375,7 @@ jobs:
   eks-aoss-vector-test:
     needs: [resolve-ref]
     if: |
+      always() && needs.resolve-ref.result == 'success' &&
       github.event_name == 'workflow_dispatch' && (inputs.test == 'eks-aoss-vector')
     uses: ./.github/workflows/aws-ci-job.yml
     concurrency:
@@ -508,8 +516,9 @@ jobs:
   rfs-default-test:
     needs: [resolve-ref]
     if: |
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && (inputs.test == 'rfs-default' || inputs.test == 'all'))
+      always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && (inputs.test == 'rfs-default' || inputs.test == 'all')))
     uses: ./.github/workflows/aws-ci-job.yml
     concurrency:
       group: aws-integ-rfs-default-${{ github.event.pull_request.number || github.run_id }}
@@ -535,8 +544,9 @@ jobs:
   solutions-cfn-create-vpc-test:
     needs: [resolve-ref]
     if: |
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && (inputs.test == 'solutions-cfn-create-vpc' || inputs.test == 'all'))
+      always() && needs.resolve-ref.result == 'success' && (
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && (inputs.test == 'solutions-cfn-create-vpc' || inputs.test == 'all')))
     uses: ./.github/workflows/aws-ci-job.yml
     concurrency:
       group: aws-integ-solutions-cfn-create-vpc-${{ github.event.pull_request.number || github.run_id }}
@@ -561,7 +571,7 @@ jobs:
 
   all-aws-integ-checks-pass:
     # One results table for the run, and the aggregate check. Tests that didn't run (not selected, or no label on a
-    # PR) count as passing.
+    # PR, which also skips resolve-ref) count as passing.
     needs: [resolve-ref, eks-integ-test, eks-cfn-create-vpc-test, eks-cfn-import-vpc-test, eks-cdc-full-e2e-test, eks-cdc-aoss-e2e-test, eks-cdc-k6-load-test, eks-aoss-search-test, eks-aoss-timeseries-test, eks-aoss-vector-test, eks-byos-test, eks-isolated-test, full-es68-test, rfs-default-test, solutions-cfn-create-vpc-test]
     if: always()
     runs-on: ubuntu-24.04
@@ -597,8 +607,10 @@ jobs:
             echo "$skipped tests not run (not selected, or no label on the PR). Each job's diagnostics are in its Collect logs step."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [[ "$(jq -r '.["resolve-ref"].result' <<< "$NEEDS")" != success ]]; then
-            echo "::error::resolve-ref didn't succeed, so no test ran"; exit 1
+          resolve=$(jq -r '.["resolve-ref"].result' <<< "$NEEDS")
+          if [[ "$resolve" == failure || "$resolve" == cancelled ||
+                ( "$GITHUB_EVENT_NAME" != pull_request_target && "$resolve" != success ) ]]; then
+            echo "::error::resolve-ref $resolve, so no test ran"; exit 1
           fi
           if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<< "$NEEDS" > /dev/null; then
             echo "::error::One or more AWS tests failed or were cancelled"; exit 1
