@@ -42,16 +42,17 @@ on:
         required: false
         type: boolean
         default: false
-      artifact-path:
-        description: 'Path(s) to upload as a workflow artifact when the job ends (e.g. test logs)'
+      collect-logs:
+        description: >-
+          Before cleanup, run ci/aws/collect-logs.sh (Kubernetes, CloudFormation and test logs, masked) and upload the
+          result as the artifact `artifact-name`
         required: false
-        type: string
-        default: ''
+        type: boolean
+        default: true
       artifact-name:
-        description: 'Name for the uploaded artifact'
-        required: false
+        description: 'Name for the logs artifact; must be unique in the run'
+        required: true
         type: string
-        default: 'aws-ci-logs'
       run-timeout-minutes:
         description: 'Timeout for the `run` step; leave room for `cleanup` inside timeout-minutes'
         required: false
@@ -152,6 +153,7 @@ jobs:
         run: echo "::warning::No role secret for pool '$POOL'; the command runs without AWS credentials"
 
       - name: Run
+        id: run
         timeout-minutes: ${{ inputs.run-timeout-minutes }}
         env:
           RUN_COMMAND: ${{ inputs.run }}
@@ -160,7 +162,16 @@ jobs:
           # Account IDs are masked in public logs, as in opensearch-ci.
           bash -euo pipefail -c "$RUN_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
 
+      - name: Collect logs
+        # Before cleanup, while the cluster and stacks still exist.
+        if: always() && inputs.collect-logs && env.ROLE_ARN != ''
+        timeout-minutes: 15
+        run: |
+          set -o pipefail
+          bash -uo pipefail "$CI_AWS"/collect-logs.sh "$RUNNER_TEMP/ci-logs" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
+
       - name: Cleanup
+        id: cleanup
         if: always() && inputs.cleanup != ''
         timeout-minutes: 75
         env:
@@ -170,9 +181,37 @@ jobs:
           bash -uo pipefail -c "$CLEANUP_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
 
       - name: Upload logs
-        if: always() && inputs.artifact-path != ''
+        id: upload
+        # Public, like the job log; collect-logs.sh masks account IDs and credentials.
+        if: always() && inputs.collect-logs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ inputs.artifact-name }}
-          path: ${{ inputs.artifact-path }}
+          path: ${{ runner.temp }}/ci-logs
           if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        env:
+          RUN_OUTCOME: ${{ steps.run.outcome }}
+          CLEANUP_OUTCOME: ${{ inputs.cleanup != '' && steps.cleanup.outcome || 'none' }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        run: |
+          icon() { case "$1" in success) echo "✅" ;; failure) echo "❌" ;; cancelled) echo "⏹️" ;; *) echo "➖" ;; esac; }
+          state="${CI_REPO_ROOT:-$GITHUB_WORKSPACE}/tmp/ci-aws-state.env"
+          stage=$(sed -nE "s/^export STAGE=(.*)$/\1/p" "$state" 2>/dev/null | tail -1)
+          {
+            echo "### ${ARTIFACT_NAME%-logs}"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Test | $(icon "$RUN_OUTCOME") $RUN_OUTCOME |"
+            echo "| Cleanup | $(icon "$CLEANUP_OUTCOME") $CLEANUP_OUTCOME |"
+            echo "| Stage | \`${stage:-not deployed}\` |"
+            echo "| Pool | $CI_POOL |"
+            if [[ -n "$ARTIFACT_URL" ]]; then
+              echo "| Logs | [$ARTIFACT_NAME]($ARTIFACT_URL) |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

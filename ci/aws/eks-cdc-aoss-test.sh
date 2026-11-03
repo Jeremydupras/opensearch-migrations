@@ -98,7 +98,9 @@ kubectl --context="$KUBE_CONTEXT" rollout status statefulset/migration-console -
 log "Running CDC AOSS tests"
 cd "$REPO_ROOT/libraries/testAutomation"
 pipenv install --deploy
-pipenv run app --source-version="$source_version" --target-type=AOSS --test-ids="$test_ids" \
+# JSON test reports; collect-logs.sh adds them to the job's artifact.
+mkdir -p reports
+pipenv run app --test-reports-dir=./reports --source-version="$source_version" --target-type=AOSS --test-ids="$test_ids" \
     --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT" \
     --verify-resource-tags --ma-stack-name="$MA_STACK_NAME" --aws-region="$REGION" --eks-cluster-name="$EKS_CLUSTER_NAME"
 

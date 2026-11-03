@@ -108,7 +108,9 @@ log "Transform images: $transform_basic $transform_sequence $transform_context"
 log "Running CDC E2E tests"
 cd "$REPO_ROOT/libraries/testAutomation"
 pipenv install --deploy
-pipenv run app --source-version="$source_version" --target-version="$target_version" --test-ids="$test_ids" \
+# JSON test reports; collect-logs.sh adds them to the job's artifact.
+mkdir -p reports
+pipenv run app --test-reports-dir=./reports --source-version="$source_version" --target-version="$target_version" --test-ids="$test_ids" \
     --speedup-factor="$speedup_factor" --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT" \
     --k6-runner-image="$registry:migrations_k6_runner_latest" \
     --transform-image-basic="$transform_basic" --transform-image-sequence="$transform_sequence" \
