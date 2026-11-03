@@ -75,5 +75,7 @@ kubectl --context="$KUBE_CONTEXT" rollout status statefulset/migration-console -
 log "Running test 0021"
 cd "$REPO_ROOT/libraries/testAutomation"
 pipenv install --deploy
-pipenv run app --source-version="$source_version" --target-type=AOSS --test-ids=0021 \
+# JSON test reports; collect-logs.sh adds them to the job's artifact.
+mkdir -p reports
+pipenv run app --test-reports-dir=./reports --source-version="$source_version" --target-type=AOSS --test-ids=0021 \
     --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT"

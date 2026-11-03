@@ -68,5 +68,7 @@ cd "$REPO_ROOT/libraries/testAutomation"
 pipenv install --deploy
 test_args=()
 [[ -n "$test_ids" && "$test_ids" != all ]] && test_args+=("--test-ids=$test_ids")
-pipenv run app --source-version="$source_version" --target-version="$target_version" "${test_args[@]}" \
+# JSON test reports; collect-logs.sh adds them to the job's artifact.
+mkdir -p reports
+pipenv run app --test-reports-dir=./reports --source-version="$source_version" --target-version="$target_version" "${test_args[@]}" \
     --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT"

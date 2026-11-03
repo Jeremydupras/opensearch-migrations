@@ -106,7 +106,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 210
       timeout-minutes: 300
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-integ-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -145,6 +144,7 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
+      artifact-name: eks-cfn-create-vpc-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -182,6 +182,7 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
+      artifact-name: eks-cfn-import-vpc-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -219,7 +220,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-cdc-full-e2e-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -258,7 +258,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 240
       timeout-minutes: 330
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-cdc-aoss-e2e-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -297,7 +296,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-cdc-k6-load-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -336,7 +334,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-aoss-search-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -363,7 +360,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-aoss-timeseries-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -390,7 +386,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-aoss-vector-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -429,7 +424,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-byos-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -468,7 +462,6 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 240
       timeout-minutes: 330
-      artifact-path: libraries/testAutomation/logs
       artifact-name: eks-isolated-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
@@ -507,6 +500,7 @@ jobs:
       cleanup: '"$CI_AWS"/cdk-integ-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
+      artifact-name: full-es68-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -533,6 +527,7 @@ jobs:
       cleanup: '"$CI_AWS"/cdk-integ-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
+      artifact-name: rfs-default-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -559,6 +554,52 @@ jobs:
       cleanup: '"$CI_AWS"/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
+      artifact-name: solutions-cfn-create-vpc-logs
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  all-aws-integ-checks-pass:
+    # One results table for the run, and the aggregate check. Tests that didn't run (not selected, or no label on a
+    # PR) count as passing.
+    needs: [resolve-ref, eks-integ-test, eks-cfn-create-vpc-test, eks-cfn-import-vpc-test, eks-cdc-full-e2e-test, eks-cdc-aoss-e2e-test, eks-cdc-k6-load-test, eks-aoss-search-test, eks-aoss-timeseries-test, eks-aoss-vector-test, eks-byos-test, eks-isolated-test, full-es68-test, rfs-default-test, solutions-cfn-create-vpc-test]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - name: Results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" \
+            --jq '.jobs[] | select(.name | endswith("-test / run"))' | jq -s .)
+          rows=$(jq -r --argjson jobs "$jobs" '
+            to_entries[] | select(.key != "resolve-ref" and .value.result != "skipped") | .key as $k
+            | ($jobs | map(select(.name == "\($k) / run")) | first) as $j
+            | [ ($k | rtrimstr("-test")),
+                ({"success": "✅", "failure": "❌", "cancelled": "⏹️"}[.value.result] // "➖") + " " + .value.result,
+                (if $j and $j.completed_at then "\((($j.completed_at | fromdate) - ($j.started_at | fromdate)) / 60 | floor) min" else "" end),
+                (if $j then "[job](\($j.html_url))" else "" end) ]
+            | "| " + join(" | ") + " |"' <<< "$NEEDS")
+          skipped=$(jq '[to_entries[] | select(.key != "resolve-ref" and .value.result == "skipped")] | length' <<< "$NEEDS")
+          {
+            echo "## AWS integ tests"
+            echo
+            if [[ -n "$rows" ]]; then
+              echo "| Test | Result | Duration | Job |"
+              echo "|---|---|---|---|"
+              echo "$rows"
+              echo
+            fi
+            echo "$skipped tests not run (not selected, or no label on the PR). Each job's logs artifact is on this page."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$(jq -r '.["resolve-ref"].result' <<< "$NEEDS")" != success ]]; then
+            echo "::error::resolve-ref didn't succeed, so no test ran"; exit 1
+          fi
+          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<< "$NEEDS" > /dev/null; then
+            echo "::error::One or more AWS tests failed or were cancelled"; exit 1
+          fi
