@@ -79,7 +79,7 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
           if [[ "$CANARY" == true ]]; then
-            tag=$(git ls-remote --tags "$REPO_URL" | grep -oE 'refs/tags/[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|refs/tags/||' | sort -V | tail -1)
+            tag=$(git ls-remote --tags "$REPO_URL" | { grep -oE 'refs/tags/[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sed 's|refs/tags/||' | sort -V | tail -1)
             [[ -n "$tag" ]] || { echo "::error::No x.y.z release tag found"; exit 1; }
             echo "Release canary: testing $tag with the CI files from $GITHUB_SHA"
             echo "ref=refs/tags/$tag" >> "$GITHUB_OUTPUT"
@@ -105,12 +105,12 @@ jobs:
       ci-files-ref: ${{ needs.plan.outputs.ci_files_ref }}
 
   all-k8s-matrix-tests-pass:
-    needs: k8s-local-test
+    needs: [plan, k8s-local-test]
     if: always()
     runs-on: ubuntu-24.04
     steps:
-      - if: ${{ contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'failure') }}
+      - if: ${{ contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'failure') || needs.k8s-local-test.result != 'success' }}
         run: |
-          echo "One or more pairs cancelled or failed" && exit 1
+          echo "One or more pairs cancelled, failed or didn't run" && exit 1
       - run: |
           echo '## :heavy_check_mark: All k8s matrix tests pass' >> "$GITHUB_STEP_SUMMARY"
