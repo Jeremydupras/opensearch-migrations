@@ -121,6 +121,10 @@ run_step "MA stack" cfn_destroy "$MA_STACK_NAME"
 if [[ -n "${CLUSTER_STACK_NAME:-}" && "${CLUSTER_INSIDE_MA_VPC:-false}" != true ]]; then
     run_step "cluster stack" destroy_clusters
 fi
+# Stacks the MA stack depends on, such as the import-VPC test's VPC.
+for stack in ${STACKS_AFTER_MA:-}; do
+    run_step "stack $stack" cfn_destroy "$stack"
+done
 [[ -n "${KUBE_CONTEXT:-}" ]] && kubectl config delete-context "$KUBE_CONTEXT" >/dev/null 2>&1
 
 # Log groups outlive the stacks (e.g. /migration-assistant-<stage>-<region>/logs); delete this run's.
@@ -135,7 +139,8 @@ delete_log_groups() {
 [[ -n "${STAGE:-}" ]] && run_step "log groups" delete_log_groups
 
 leftover=()
-for stack in "$MA_STACK_NAME" ${CLUSTER_STACK_NAME:+"$CLUSTER_STACK_NAME"}; do
+# shellcheck disable=SC2086 # STACKS_AFTER_MA is a space-separated list
+for stack in "$MA_STACK_NAME" ${CLUSTER_STACK_NAME:+"$CLUSTER_STACK_NAME"} ${STACKS_AFTER_MA:-}; do
     status=$(stack_status "$stack")
     [[ "$status" == GONE || "$status" == DELETE_COMPLETE ]] || leftover+=("$stack: $status")
 done

@@ -2,16 +2,18 @@
 # Builds Migration Assistant from source and deploys it to a new EKS cluster with aws-bootstrap.sh, as
 # vars/resolveBootstrap.groovy + vars/bootstrapMA.groovy. Records the stack exports in the CI state file for cleanup.
 #
-# Usage: bootstrap-ma.sh --stack-name N --stage S --kube-context C [--use-general-node-pool] [extra aws-bootstrap args]
+# Usage: bootstrap-ma.sh --stack-name N --stage S --kube-context C [--deploy-import-vpc-cfn] [extra aws-bootstrap args]
+# Deploys the create-VPC template unless --deploy-import-vpc-cfn is given.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-stack_name="" stage="" kube_context="" extra=()
+stack_name="" stage="" kube_context="" deploy_flag=--deploy-create-vpc-cfn extra=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --stack-name) stack_name="$2"; shift 2 ;;
         --stage) stage="$2"; shift 2 ;;
         --kube-context) kube_context="$2"; shift 2 ;;
+        --deploy-create-vpc-cfn|--deploy-import-vpc-cfn) deploy_flag="$1"; shift ;;
         *) extra+=("$1"); shift ;;
     esac
 done
@@ -33,7 +35,7 @@ cd "$REPO_ROOT"
 
 status=0
 ./deployment/k8s/aws/dist/aws-bootstrap.sh \
-    --deploy-create-vpc-cfn \
+    "$deploy_flag" \
     --stack-name "$stack_name" \
     --stage "$stage" \
     --eks-access-principal-arn "$access_principal" \
