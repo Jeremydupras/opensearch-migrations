@@ -72,3 +72,6 @@ test_args=()
 mkdir -p reports
 pipenv run app --test-reports-dir=./reports --source-version="$source_version" --target-version="$target_version" "${test_args[@]}" \
     --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT"
+
+# TEMPORARY (not for merge): fail after the tests so the failure path (diagnostics, log retention) can be checked.
+die "Injected failure: checking that a failed test prints its diagnostics"
