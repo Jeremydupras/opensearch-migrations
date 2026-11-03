@@ -44,7 +44,7 @@ jobs:
     with:
       pool: main
       collect-logs: false
-      artifact-name: smoke-main-logs
+      test-name: smoke-main
       commit: ${{ needs.sanitize-input.outputs.commit_hash }}
       run: |
         if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
@@ -67,7 +67,7 @@ jobs:
     with:
       pool: pr
       collect-logs: false
-      artifact-name: smoke-pr-logs
+      test-name: smoke-pr
       commit: ${{ needs.sanitize-input.outputs.commit_hash }}
       run: |
         if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
