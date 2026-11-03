@@ -31,11 +31,16 @@ jobs:
     with:
       label: run-aws-smoke-test
 
+  # On PRs, nothing reads PR data until the gate allows the run.
   sanitize-input:
+    needs: pr-gate
+    if: |
+      !cancelled() && (github.event_name != 'pull_request_target' || needs.pr-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/sanitize-repo-details.yml
 
   smoke-main:
-    if: github.event_name != 'pull_request_target'
+    if: |
+      !cancelled() && github.event_name != 'pull_request_target' && needs.sanitize-input.result == 'success'
     needs: sanitize-input
     uses: ./.github/workflows/aws-ci-job.yml
     permissions:
@@ -59,7 +64,8 @@ jobs:
 
   smoke-pr:
     needs: [pr-gate, sanitize-input]
-    if: needs.pr-gate.outputs.allowed == 'true'
+    if: |
+      !cancelled() && needs.pr-gate.outputs.allowed == 'true' && needs.sanitize-input.result == 'success'
     uses: ./.github/workflows/aws-ci-job.yml
     permissions:
       id-token: write
