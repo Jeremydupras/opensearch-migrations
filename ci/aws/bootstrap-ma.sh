@@ -24,6 +24,7 @@ record_exports() {
     exports=$(cfn_exports "$stack_name") || return 1
     state_set EKS_CLUSTER_NAME "$(sed -n 's/^MIGRATIONS_EKS_CLUSTER_NAME=//p' <<< "$exports")"
     state_set MA_VPC_ID "$(sed -n 's/^VPC_ID=//p' <<< "$exports")"
+    state_set EKS_CLUSTER_SG "$(sed -n 's/^EKS_CLUSTER_SECURITY_GROUP=//p' <<< "$exports")"
 }
 
 # The EKS access entry goes to the role this job assumed (osm-ci-main or osm-ci-pr), in place of JenkinsDeploymentRole.

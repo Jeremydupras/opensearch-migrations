@@ -5,10 +5,12 @@
 #
 # Usage: deploy-clusters.sh --stage S --context-file F [--source-version V --source-type T]
 #                           [--target-version V --target-type T] [--public-access]
+#                           [--vpc-id VPC --subnet-ids SUBNET1,SUBNET2]  (default: a new 2-AZ VPC)
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 stage="" context_file="" source_version="" source_type="" target_version="" target_type="" public_access=false
+vpc_id="" subnet_ids=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --stage) stage="$2"; shift 2 ;;
@@ -18,6 +20,8 @@ while [[ $# -gt 0 ]]; do
         --target-version) target_version="$2"; shift 2 ;;
         --target-type) target_type="$2"; shift 2 ;;
         --public-access) public_access=true; shift ;;
+        --vpc-id) vpc_id="$2"; shift 2 ;;
+        --subnet-ids) subnet_ids="$2"; shift 2 ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
@@ -42,8 +46,9 @@ clusters="[]"
 [[ "$(jq length <<< "$clusters")" -gt 0 ]] || die "No clusters defined; pass --source-version and/or --target-version"
 
 mkdir -p "$REPO_ROOT/test/$(dirname "$context_file")"
-jq -n --arg stage "$stage" --argjson clusters "$clusters" \
-    '{stage: $stage, clusters: $clusters, vpcAZCount: 2, "@aws-cdk/core:bootstrapQualifier": "osmtest"}' \
+jq -n --arg stage "$stage" --argjson clusters "$clusters" --arg vpc "$vpc_id" --arg subnets "$subnet_ids" '
+    {stage: $stage, clusters: $clusters, "@aws-cdk/core:bootstrapQualifier": "osmtest"}
+    + (if $vpc != "" then {vpcId: $vpc, vpcSubnetIds: ($subnets | split(","))} else {vpcAZCount: 2} end)' \
     > "$REPO_ROOT/test/$context_file"
 log "Cluster context file test/$context_file:"
 cat "$REPO_ROOT/test/$context_file"

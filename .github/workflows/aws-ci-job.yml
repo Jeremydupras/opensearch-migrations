@@ -16,6 +16,18 @@ on:
         description: 'Commit to check out (use the sanitize-repo-details.yml output)'
         required: true
         type: string
+      scripts-ref:
+        description: >-
+          Run the ci/aws scripts from this ref instead of `commit` (release canaries test a release tag, which predates
+          ci/aws). Commands reach the scripts through $CI_AWS either way.
+        required: false
+        type: string
+        default: ''
+      release:
+        description: 'Name stages as release runs (<base>-r...) instead of main/PR'
+        required: false
+        type: boolean
+        default: false
       run:
         description: 'Shell command to run once the credentials are set'
         required: true
@@ -72,7 +84,8 @@ jobs:
       contents: read
     env:
       POOL: ${{ inputs.pool }}
-      CI_POOL: ${{ inputs.pool }}
+      CI_POOL: ${{ inputs.release && 'release' || inputs.pool }}
+      CI_AWS: ${{ inputs.scripts-ref != '' && '.ci-scripts/ci/aws' || './ci/aws' }}
       REGION: us-east-1
     steps:
       - name: Check pool and pick the role
@@ -107,6 +120,19 @@ jobs:
         with:
           ref: ${{ inputs.commit }}
           persist-credentials: false
+
+      - name: Check out the ci/aws scripts
+        if: inputs.scripts-ref != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.scripts-ref }}
+          path: .ci-scripts
+          sparse-checkout: ci/aws
+          persist-credentials: false
+
+      - name: Point the scripts at the product checkout
+        if: inputs.scripts-ref != ''
+        run: echo "CI_REPO_ROOT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
 
       - uses: ./.github/actions/setup-env
         if: inputs.setup-env

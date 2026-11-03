@@ -4,7 +4,8 @@
 # finalCleanup). Source it; don't run it.
 
 CI_AWS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$CI_AWS_DIR/../.." && pwd)"
+# CI_REPO_ROOT points at the product checkout when these scripts come from a different ref (release canaries).
+REPO_ROOT="${CI_REPO_ROOT:-$(cd "$CI_AWS_DIR/../.." && pwd)}"
 export REPO_ROOT
 REGION="${REGION:-us-east-1}"
 export AWS_DEFAULT_REGION="$REGION"
@@ -107,4 +108,20 @@ cfn_destroy() {
 prefix_lines() {
     local label="$1"
     while IFS= read -r line; do printf '%s | %-8s | %s\n' "$(date -u '+%H:%M:%S')" "$label" "$line"; done
+}
+
+# Points every CDK command on this runner at the test bootstrap (qualifier osmtest, stack CDKToolkitTests), whose
+# execution role carries the osm-ci-test-boundary. For CDK apps that take no qualifier setting of their own.
+use_test_cdk_bootstrap() {
+    jq -n '{toolkitStackName: "CDKToolkitTests", context: {"@aws-cdk/core:bootstrapQualifier": "osmtest"}}' > "$HOME/.cdk.json"
+}
+
+# unbuffer (expect) and the Session Manager plugin, for `aws ecs execute-command` into the migration console.
+install_ecs_exec_tools() {
+    command -v unbuffer >/dev/null || sudo apt-get install -y -qq expect >/dev/null
+    if ! command -v session-manager-plugin >/dev/null; then
+        curl -fsSL -o /tmp/session-manager-plugin.deb \
+            https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb
+        sudo dpkg -i /tmp/session-manager-plugin.deb >/dev/null
+    fi
 }
