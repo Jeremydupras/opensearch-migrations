@@ -125,3 +125,7 @@ install_ecs_exec_tools() {
         sudo dpkg -i /tmp/session-manager-plugin.deb >/dev/null
     fi
 }
+
+# This account's copy of the snapshot library (copied once from s3://migrations-snapshots-library-us-east-1 in the old
+# test account; the bucket is defined in deployment/cdk/ci-infra).
+snapshot_library() { printf 's3://migrations-snapshots-library-%s-%s' "$(account_id)" "$REGION"; }

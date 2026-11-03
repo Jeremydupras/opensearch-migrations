@@ -3,7 +3,7 @@
 # deploys only a target domain in the MA VPC, and migrates a snapshot from the snapshot library (no source cluster).
 # Run ci/aws/eks-cleanup.sh afterwards, whatever the outcome.
 #
-# The snapshot library bucket is in the old test account (329599636015); it must grant this account read access.
+# Snapshots come from this account's copy of the snapshot library (see snapshot_library in lib.sh).
 # The large presets (5-6 TB, 90 workers) ran up to 18h on Jenkins and don't fit in a 6h GitHub-hosted job.
 #
 # Usage: eks-byos-test.sh [--preset custom|small-es5x-300k|small-es7x-osb|large-es7x-24B|large-es6x-20B|large-es5x]
@@ -12,7 +12,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-library=s3://migrations-snapshots-library-us-east-1
+library=$(snapshot_library)
 preset=custom target_version=OS_2.19 test_ids=0010 monitor_retry_limit=1000000
 s3_repo_uri="$library/ma_osb_data/es7x-osb-data/" snapshot_name=es7x-osb-data source_version=ES_7.10
 rfs_workers=1 target_size=default

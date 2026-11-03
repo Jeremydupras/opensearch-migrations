@@ -21,4 +21,5 @@ new CiInfraStack(app, 'osm-ci-infra', {
         pinWorkflowClaims: String(app.node.tryGetContext('pinWorkflowClaims') ?? 'true') !== 'false',
     },
     testRoleManagedPolicyArns: app.node.tryGetContext('testRoleManagedPolicyArns') ?? [],
+    snapshotCopyPrincipalArn: app.node.tryGetContext('snapshotCopyPrincipalArn') || undefined,
 });

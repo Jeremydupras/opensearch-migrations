@@ -3,7 +3,7 @@
 # Migration Assistant on EKS, deploys SEARCH, TIMESERIES and VECTORSEARCH collections in the MA VPC, then runs test 0021,
 # which migrates a snapshot from the snapshot library into each collection. Run ci/aws/eks-cleanup.sh afterwards.
 #
-# The snapshot library bucket is in the old test account (329599636015); it must grant this account read access.
+# Snapshots come from this account's copy of the snapshot library (see snapshot_library in lib.sh).
 #
 # Usage: eks-aoss-test.sh [--stage-base aosss|aosst|aossv] [--s3-repo-uri URI] [--snapshot-name NAME]
 #                         [--source-version OS_1.3] [--monitor-retry-limit 33]
@@ -11,7 +11,7 @@ set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
 stage_base=aosss source_version=OS_1.3 monitor_retry_limit=33
-s3_repo_uri=s3://migrations-snapshots-library-us-east-1/aoss-osb-data/os1x-aoss-osb-data/
+s3_repo_uri="$(snapshot_library)/aoss-osb-data/os1x-aoss-osb-data/"
 snapshot_name=os1x-aoss-osb-data
 while [[ $# -gt 0 ]]; do
     case "$1" in

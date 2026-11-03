@@ -1,10 +1,13 @@
-import { CfnOutput, Duration, Stack, StackProps } from 'aws-cdk-lib';
+import { CfnOutput, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import {
+    AnyPrincipal,
+    ArnPrincipal,
     Effect,
     ManagedPolicy,
     OpenIdConnectProvider,
     PolicyStatement,
 } from 'aws-cdk-lib/aws-iam';
+import { BlockPublicAccess, Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { GITHUB_OIDC_HOST, GitHubEnvironmentRole, GitHubRepoSettings } from './github-actions-roles';
 
@@ -27,6 +30,11 @@ export interface CiInfraStackProps extends StackProps {
     readonly github: GitHubRepoSettings;
     /** Managed policies granted to both test roles. Starts view-only; widen it when tests are ported. */
     readonly testRoleManagedPolicyArns: string[];
+    /**
+     * IAM role ARN that may write to the snapshot library while it's being copied in from the old test account.
+     * Leave unset once the copy is done.
+     */
+    readonly snapshotCopyPrincipalArn?: string;
 }
 
 export class CiInfraStack extends Stack {
@@ -146,6 +154,43 @@ export class CiInfraStack extends Stack {
             resources: [`arn:aws:iam::${this.account}:role/cdk-${INFRA_CDK_QUALIFIER}-*-${this.account}-${this.region}`],
         }));
 
+        // Snapshot library for the AOSS and BYOS tests, copied from s3://migrations-snapshots-library-us-east-1 in the old
+        // test account. The name starts with "migrations-" so the Migration Assistant pod roles can read it. Only the
+        // account's Admin role (and the copy role, while set) may write or delete; tests can only read.
+        const snapshotLibrary = new Bucket(this, 'SnapshotLibrary', {
+            bucketName: `migrations-snapshots-library-${this.account}-${this.region}`,
+            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+            encryption: BucketEncryption.S3_MANAGED,
+            objectOwnership: ObjectOwnership.BUCKET_OWNER_ENFORCED,
+            enforceSSL: true,
+            removalPolicy: RemovalPolicy.RETAIN,
+        });
+        // The infra CDK execution role updates this bucket's policy on deploy.
+        const writers = [
+            `arn:aws:iam::${this.account}:role/Admin`,
+            `arn:aws:iam::${this.account}:role/cdk-${INFRA_CDK_QUALIFIER}-cfn-exec-role-${this.account}-${this.region}`,
+        ];
+        if (props.snapshotCopyPrincipalArn) {
+            writers.push(props.snapshotCopyPrincipalArn);
+            snapshotLibrary.addToResourcePolicy(new PolicyStatement({
+                sid: 'AllowSnapshotCopyIn',
+                principals: [new ArnPrincipal(props.snapshotCopyPrincipalArn)],
+                actions: ['s3:ListBucket', 's3:GetBucketLocation', 's3:GetObject', 's3:PutObject',
+                    's3:AbortMultipartUpload', 's3:ListMultipartUploadParts', 's3:ListBucketMultipartUploads'],
+                resources: [snapshotLibrary.bucketArn, snapshotLibrary.arnForObjects('*')],
+            }));
+        }
+        snapshotLibrary.addToResourcePolicy(new PolicyStatement({
+            sid: 'OnlyAdminsWrite',
+            effect: Effect.DENY,
+            principals: [new AnyPrincipal()],
+            actions: ['s3:PutObject', 's3:DeleteObject', 's3:DeleteObjectVersion', 's3:PutBucketPolicy',
+                's3:DeleteBucketPolicy', 's3:DeleteBucket', 's3:PutLifecycleConfiguration'],
+            resources: [snapshotLibrary.bucketArn, snapshotLibrary.arnForObjects('*')],
+            conditions: { ArnNotLike: { 'aws:PrincipalArn': writers } },
+        }));
+
+        new CfnOutput(this, 'SnapshotLibraryBucket', { value: snapshotLibrary.bucketName });
         new CfnOutput(this, 'MainTestRoleArn', { value: mainRole.roleArn, description: 'Secret MIGRATIONS_CI_MAIN_ROLE' });
         new CfnOutput(this, 'PrTestRoleArn', { value: prRole.roleArn, description: 'Secret MIGRATIONS_CI_PR_ROLE' });
         new CfnOutput(this, 'InfraDeployRoleArn', {
