@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Solutions CloudFormation test (ECS/EC2 bootstrap box), ported from vars/solutionsCFNTest.groovy: deploys the
 # Migration-Assistant-Infra-Create-VPC CDK stack, runs the INIT_BOOTSTRAP workflow on its bootstrap EC2 instance over
-# SSM, then verifies it. Run ci/aws/eks-cleanup.sh afterwards (it deletes the stack and the run's log groups).
+# SSM, then verifies it. Run ci/aws/shared/eks-cleanup.sh afterwards (it deletes the stack and the run's log groups).
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 stage=$(stage_name sol)
 state_set STAGE "$stage"

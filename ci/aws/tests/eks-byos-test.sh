@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bring-your-own-snapshot test, ported from vars/eksBYOSIntegPipeline.groovy: bootstraps Migration Assistant on EKS,
 # deploys only a target domain in the MA VPC, and migrates a snapshot from the snapshot library (no source cluster).
-# Run ci/aws/eks-cleanup.sh afterwards, whatever the outcome.
+# Run ci/aws/shared/eks-cleanup.sh afterwards, whatever the outcome.
 #
 # Snapshots come from this account's copy of the snapshot library (see snapshot_library in lib.sh).
 # The large presets (5-6 TB, 90 workers) ran up to 18h on Jenkins and don't fit in a 6h GitHub-hosted job.
@@ -10,7 +10,7 @@
 #                         [--s3-repo-uri URI --snapshot-name NAME --source-version V --rfs-workers N --target-size default|large]
 #                         [--target-version OS_2.19] [--test-ids 0010] [--monitor-retry-limit 1000000]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 library=$(snapshot_library)
 preset=custom target_version=OS_2.19 test_ids=0010 monitor_retry_limit=1000000
@@ -70,7 +70,7 @@ Test IDs:  $test_ids
 INFO
 aws sts get-caller-identity --query Arn --output text
 
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     --use-general-node-pool
 state_load
 [[ -n "${MA_VPC_ID:-}" ]] || die "Missing VPC_ID export on $MA_STACK_NAME"

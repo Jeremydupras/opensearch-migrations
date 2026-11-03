@@ -3,7 +3,11 @@
 # Ported from the Jenkins shared library in vars/ (withMigrationsTestAccount, parseCfnExports, expandVersionString,
 # finalCleanup). Source it; don't run it.
 
-CI_AWS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ci/aws/shared holds the scripts the tests share; ci/aws/tests holds one entry script per test and its data.
+CI_SHARED_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CI_AWS_DIR="$(dirname "$CI_SHARED_DIR")"
+# shellcheck disable=SC2034 # used by the test scripts
+CI_TESTS_DIR="$CI_AWS_DIR/tests"
 # CI_REPO_ROOT points at the product checkout when these scripts come from a different ref (release canaries).
 REPO_ROOT="${CI_REPO_ROOT:-$(cd "$CI_AWS_DIR/../.." && pwd)}"
 export REPO_ROOT

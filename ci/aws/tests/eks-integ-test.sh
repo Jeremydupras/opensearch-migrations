@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # EKS integration test, ported from vars/eksIntegPipeline.groovy: deploys managed source/target domains and Migration
 # Assistant on EKS in parallel, wires the cluster configmaps, checks the CloudWatch dashboards, then runs the Python
-# E2E tests. Run ci/aws/eks-cleanup.sh afterwards, whatever the outcome.
+# E2E tests. Run ci/aws/shared/eks-cleanup.sh afterwards, whatever the outcome.
 #
 # Usage: eks-integ-test.sh [--source-version ES_7.10] [--target-version OS_1.3] [--test-ids 0001,0002]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 source_version=ES_7.10 target_version=OS_1.3 test_ids=0001,0002
 cluster_type=OPENSEARCH_MANAGED_SERVICE
@@ -40,12 +40,12 @@ INFO
 aws sts get-caller-identity --query Arn --output text
 
 log "Deploying clusters and bootstrapping Migration Assistant in parallel"
-"$CI_AWS_DIR/deploy-clusters.sh" --stage "$stage" --context-file "$CDK_CONTEXT_FILE" \
+"$CI_SHARED_DIR/deploy-clusters.sh" --stage "$stage" --context-file "$CDK_CONTEXT_FILE" \
     --source-version "$source_version" --source-type "$cluster_type" \
     --target-version "$target_version" --target-type "$cluster_type" \
     --public-access 2>&1 | prefix_lines clusters &
 clusters_pid=$!
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     --use-general-node-pool 2>&1 | prefix_lines ma &
 ma_pid=$!
 clusters_rc=0 ma_rc=0
@@ -56,11 +56,11 @@ state_load
 [[ $ma_rc -eq 0 ]] || die "Migration Assistant bootstrap failed (rc=$ma_rc)"
 
 log "Creating source/target cluster configmaps"
-"$CI_AWS_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
+"$CI_SHARED_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
     --source-version "$source_version" --target-version "$target_version"
 
 log "Validating CloudWatch dashboards"
-"$CI_AWS_DIR/verify-eks-dashboards.sh" create --kube-context "$KUBE_CONTEXT" --stage "$stage"
+"$CI_SHARED_DIR/verify-eks-dashboards.sh" create --kube-context "$KUBE_CONTEXT" --stage "$stage"
 state_set DASHBOARDS_VERIFIED true
 
 log "Running Python E2E tests"
