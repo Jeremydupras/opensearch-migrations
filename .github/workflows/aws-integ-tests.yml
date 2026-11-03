@@ -106,7 +106,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 210
       timeout-minutes: 300
-      artifact-name: eks-integ-logs
+      test-name: eks-integ
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -144,7 +144,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
-      artifact-name: eks-cfn-create-vpc-logs
+      test-name: eks-cfn-create-vpc
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -182,7 +182,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
-      artifact-name: eks-cfn-import-vpc-logs
+      test-name: eks-cfn-import-vpc
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -220,7 +220,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-name: eks-cdc-full-e2e-logs
+      test-name: eks-cdc-full-e2e
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -258,7 +258,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 240
       timeout-minutes: 330
-      artifact-name: eks-cdc-aoss-e2e-logs
+      test-name: eks-cdc-aoss-e2e
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -296,7 +296,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-name: eks-cdc-k6-load-logs
+      test-name: eks-cdc-k6-load
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -334,7 +334,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
-      artifact-name: eks-aoss-search-logs
+      test-name: eks-aoss-search
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -360,7 +360,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
-      artifact-name: eks-aoss-timeseries-logs
+      test-name: eks-aoss-timeseries
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -386,7 +386,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
-      artifact-name: eks-aoss-vector-logs
+      test-name: eks-aoss-vector
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -424,7 +424,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-name: eks-byos-logs
+      test-name: eks-byos
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -462,7 +462,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 240
       timeout-minutes: 330
-      artifact-name: eks-isolated-logs
+      test-name: eks-isolated
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -500,7 +500,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/cdk-integ-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-name: full-es68-logs
+      test-name: full-es68
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -527,7 +527,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/cdk-integ-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
-      artifact-name: rfs-default-logs
+      test-name: rfs-default
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -554,7 +554,7 @@ jobs:
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
-      artifact-name: solutions-cfn-create-vpc-logs
+      test-name: solutions-cfn-create-vpc
     secrets:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
@@ -594,7 +594,7 @@ jobs:
               echo "$rows"
               echo
             fi
-            echo "$skipped tests not run (not selected, or no label on the PR). Each job's logs artifact is on this page."
+            echo "$skipped tests not run (not selected, or no label on the PR). Each job's diagnostics are in its Collect logs step."
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [[ "$(jq -r '.["resolve-ref"].result' <<< "$NEEDS")" != success ]]; then
