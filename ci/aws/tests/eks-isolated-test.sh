@@ -6,11 +6,11 @@
 #      build ECR; the script checks that pods can't reach the internet;
 #   3. source/target domains go into NAT'd private subnets of that VPC, reachable from EKS on 443;
 #   4. the tests run, and CloudWatch log delivery through the VPC endpoint is checked.
-# Run ci/aws/eks-cleanup.sh afterwards, whatever the outcome.
+# Run ci/aws/shared/eks-cleanup.sh afterwards, whatever the outcome.
 #
 # Usage: eks-isolated-test.sh [--source-version ES_7.10] [--target-version OS_2.19] [--test-ids 0040]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 source_version=ES_7.10 target_version=OS_2.19 test_ids=0040
 cluster_type=OPENSEARCH_MANAGED_SERVICE
@@ -48,7 +48,7 @@ INFO
 aws sts get-caller-identity --query Arn --output text
 
 log "Phase 1: build stack"
-CI_STATE_FILE="$REPO_ROOT/tmp/ci-aws-build-state.env" "$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$build_stack" \
+CI_STATE_FILE="$REPO_ROOT/tmp/ci-aws-build-state.env" "$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$build_stack" \
     --stage "$build_stage" --kube-context "migration-eks-build-$build_stage"
 build_ecr=$(cfn_exports "$build_stack" | sed -n 's/^MIGRATIONS_ECR_REGISTRY=//p')
 [[ -n "$build_ecr" ]] || die "No MIGRATIONS_ECR_REGISTRY export on $build_stack"
@@ -69,7 +69,7 @@ iso_subnet2=$(new_subnet 10.213.1.0/24 b 2)
 log "Isolated VPC $vpc_id, subnets $iso_subnet1 $iso_subnet2 (no internet routes)"
 aws ec2 create-tags --resources "$iso_subnet1" "$iso_subnet2" --tags Key=kubernetes.io/role/internal-elb,Value=1
 
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     --deploy-import-vpc-cfn --vpc-id "$vpc_id" --subnet-ids "$iso_subnet1,$iso_subnet2" --create-vpc-endpoints \
     --ma-images-source "$build_ecr"
 state_load
@@ -107,7 +107,7 @@ aws ec2 associate-route-table --route-table-id "$priv_rt" --subnet-id "$priv1" >
 aws ec2 associate-route-table --route-table-id "$priv_rt" --subnet-id "$priv2" >/dev/null
 log "AOS networking: public $pub1 $pub2, NAT $nat, private $priv1 $priv2"
 
-"$CI_AWS_DIR/deploy-clusters.sh" --stage "$stage" --context-file "$CDK_CONTEXT_FILE" \
+"$CI_SHARED_DIR/deploy-clusters.sh" --stage "$stage" --context-file "$CDK_CONTEXT_FILE" \
     --source-version "$source_version" --source-type "$cluster_type" \
     --target-version "$target_version" --target-type "$cluster_type" \
     --vpc-id "$vpc_id" --subnet-ids "$priv1,$priv2"
@@ -125,7 +125,7 @@ for id in source target; do
 done
 
 log "Creating source/target cluster configmaps"
-"$CI_AWS_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
+"$CI_SHARED_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
     --source-version "$source_version" --target-version "$target_version"
 
 log "Phase 4: tests"

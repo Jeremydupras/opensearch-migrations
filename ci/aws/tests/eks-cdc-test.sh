@@ -2,12 +2,12 @@
 # EKS capture-and-replay (CDC) test, ported from vars/eksCdcIntegPipeline.groovy: deploys managed source/target domains
 # and Migration Assistant on EKS (with deployer resource tags, tag enforcement and a workload NodePool override),
 # builds the transform test images, runs the CDC E2E tests, then checks the workload NodePools.
-# Run ci/aws/eks-cleanup.sh afterwards, whatever the outcome.
+# Run ci/aws/shared/eks-cleanup.sh afterwards, whatever the outcome.
 #
 # Usage: eks-cdc-test.sh [--stage-base esoscdc] [--test-ids 0031,...] [--source-version ES_7.10]
 #                        [--target-version OS_1.3] [--speedup-factor 20]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 stage_base=esoscdc test_ids=0031 source_version=ES_7.10 target_version=OS_1.3 speedup_factor=20
 cluster_type=OPENSEARCH_MANAGED_SERVICE
@@ -65,13 +65,13 @@ INFO
 aws sts get-caller-identity --query Arn --output text
 
 log "Deploying clusters and bootstrapping Migration Assistant in parallel"
-"$CI_AWS_DIR/deploy-clusters.sh" --stage "$stage" --context-file "$CDK_CONTEXT_FILE" \
+"$CI_SHARED_DIR/deploy-clusters.sh" --stage "$stage" --context-file "$CDK_CONTEXT_FILE" \
     --source-version "$source_version" --source-type "$cluster_type" \
     --target-version "$target_version" --target-type "$cluster_type" \
     --public-access 2>&1 | prefix_lines clusters &
 clusters_pid=$!
 # Deployer tags turn on a tagged Auto Mode NodeClass, so this test doesn't use --use-general-node-pool.
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     --tags "MATestOwner=migrations-ci,MATestStage=$stage" --enforce-tags-on-create-for-tests \
     --helm-values "$nodepool_overrides" "${load_test_flag[@]}" 2>&1 | prefix_lines ma &
 ma_pid=$!
@@ -83,7 +83,7 @@ state_load
 [[ $ma_rc -eq 0 ]] || die "Migration Assistant bootstrap failed (rc=$ma_rc)"
 
 log "Creating source/target cluster configmaps"
-"$CI_AWS_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
+"$CI_SHARED_DIR/cluster-configmaps.sh" --kube-context "$KUBE_CONTEXT" --stage "$stage" \
     --source-version "$source_version" --target-version "$target_version"
 
 log "Building transform test images"
@@ -118,5 +118,5 @@ pipenv run app --test-reports-dir=./reports --source-version="$source_version" -
     --verify-resource-tags --ma-stack-name="$MA_STACK_NAME" --aws-region="$REGION" --eks-cluster-name="$EKS_CLUSTER_NAME"
 
 log "Verifying the workload NodePools"
-python3 "$CI_AWS_DIR/verify-workload-nodepool.py" --kube-context "$KUBE_CONTEXT" --overrides "$nodepool_overrides" \
+python3 "$CI_SHARED_DIR/verify-workload-nodepool.py" --kube-context "$KUBE_CONTEXT" --overrides "$nodepool_overrides" \
     --chart-values "$REPO_ROOT/deployment/k8s/charts/aggregates/migrationAssistantWithArgo/values.yaml"

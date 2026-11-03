@@ -2,11 +2,11 @@
 # EKS capture-and-replay test into an OpenSearch Serverless (AOSS) search collection, ported from
 # vars/eksCdcAossIntegPipeline.groovy. Bootstraps Migration Assistant first (with deployer tags, tag enforcement and an
 # arm64 workload NodePool), then deploys the ES source domain and the AOSS collection inside the MA VPC, runs the CDC
-# AOSS tests and checks the workload NodePools. Run ci/aws/eks-cleanup.sh afterwards, whatever the outcome.
+# AOSS tests and checks the workload NodePools. Run ci/aws/shared/eks-cleanup.sh afterwards, whatever the outcome.
 #
 # Usage: eks-cdc-aoss-test.sh [--test-ids 0034,0041] [--source-version ES_7.10]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 test_ids=0034,0041 source_version=ES_7.10
 while [[ $# -gt 0 ]]; do
@@ -53,7 +53,7 @@ Target:    AOSS (search collection)
 INFO
 aws sts get-caller-identity --query Arn --output text
 
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     --tags "MATestOwner=migrations-ci,MATestStage=$stage" --enforce-tags-on-create-for-tests \
     --helm-values "$nodepool_overrides"
 state_load
@@ -105,5 +105,5 @@ pipenv run app --test-reports-dir=./reports --source-version="$source_version" -
     --verify-resource-tags --ma-stack-name="$MA_STACK_NAME" --aws-region="$REGION" --eks-cluster-name="$EKS_CLUSTER_NAME"
 
 log "Verifying the workload NodePools"
-python3 "$CI_AWS_DIR/verify-workload-nodepool.py" --kube-context "$KUBE_CONTEXT" --overrides "$nodepool_overrides" \
+python3 "$CI_SHARED_DIR/verify-workload-nodepool.py" --kube-context "$KUBE_CONTEXT" --overrides "$nodepool_overrides" \
     --chart-values "$REPO_ROOT/deployment/k8s/charts/aggregates/migrationAssistantWithArgo/values.yaml"

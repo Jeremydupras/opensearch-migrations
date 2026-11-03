@@ -23,7 +23,7 @@ run_step() {
 }
 
 verify_dashboards_deleted() {
-    "$CI_AWS_DIR/verify-eks-dashboards.sh" delete --kube-context "$KUBE_CONTEXT" --stage "${STAGE:?}"
+    "$CI_SHARED_DIR/verify-eks-dashboards.sh" delete --kube-context "$KUBE_CONTEXT" --stage "${STAGE:?}"
 }
 
 teardown_ma_app() {

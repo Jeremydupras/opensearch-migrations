@@ -3,11 +3,11 @@
 # configurations (vars/fullES68SourceE2ETest.groovy, vars/rfsDefaultE2ETest.groovy). Deploys an EC2 source cluster and
 # the Migration Assistant CDK stacks with test/awsE2ESolutionSetup.sh, then runs the integ tests on the migration
 # console over ECS exec. Every run uses its own stage (Jenkins reused long-lived stages); run
-# ci/aws/cdk-integ-cleanup.sh afterwards, whatever the outcome, to destroy them.
+# ci/aws/shared/cdk-integ-cleanup.sh afterwards, whatever the outcome, to destroy them.
 #
 # Usage: cdk-integ-test.sh --test full-es68|rfs-default
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 test_name=""
 while [[ $# -gt 0 ]]; do
@@ -29,14 +29,14 @@ state_set CDK_INTEG_STAGE "$stage"
 state_set CDK_INTEG_SOURCE_ID "$source_id"
 state_set CDK_INTEG_MIGRATION_ID "$migration_id"
 
-cp "$CI_AWS_DIR/contexts/$test_name-source.json" "$REPO_ROOT/test/$source_context"
+cp "$CI_TESTS_DIR/contexts/$test_name-source.json" "$REPO_ROOT/test/$source_context"
 if [[ "$test_name" == full-es68 ]]; then
-    rfs_b64=$(jq -c . "$CI_AWS_DIR/contexts/full-es68-rfs-transformers.json" | tr -d '\n' | base64 -w0)
+    rfs_b64=$(jq -c . "$CI_TESTS_DIR/contexts/full-es68-rfs-transformers.json" | tr -d '\n' | base64 -w0)
     sed -e "s|<TEST_UNIQUE_ID>|$test_unique_id|g" -e "s|<RFS_TRANSFORMERS_B64>|$rfs_b64|g" \
-        "$CI_AWS_DIR/contexts/$test_name-migration.json" > "$REPO_ROOT/test/$migration_context"
+        "$CI_TESTS_DIR/contexts/$test_name-migration.json" > "$REPO_ROOT/test/$migration_context"
     integ_command="/root/lib/integ_test/integ_test/full_tests.py --source_proxy_alb_endpoint https://alb.migration.$stage.local:9201 --target_proxy_alb_endpoint https://alb.migration.$stage.local:9202 --replayer_group_id logging-group-$test_unique_id"
 else
-    cp "$CI_AWS_DIR/contexts/$test_name-migration.json" "$REPO_ROOT/test/$migration_context"
+    cp "$CI_TESTS_DIR/contexts/$test_name-migration.json" "$REPO_ROOT/test/$migration_context"
     integ_command="/root/lib/integ_test/integ_test/backfill_tests.py"
 fi
 

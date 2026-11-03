@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # EKS Solutions CloudFormation test, ported from vars/eksSolutionsCFNTest.groovy: deploys Migration Assistant through
 # the production create-VPC or import-VPC template with aws-bootstrap.sh, then checks that the migration console comes
-# up. In import mode it first deploys a test VPC (templates/test-vpc.json). Run ci/aws/eks-cleanup.sh afterwards,
+# up. In import mode it first deploys a test VPC (templates/test-vpc.json). Run ci/aws/shared/eks-cleanup.sh afterwards,
 # whatever the outcome.
 #
 # Usage: eks-cfn-test.sh [--vpc-mode create|import]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 vpc_mode=create
 while [[ $# -gt 0 ]]; do
@@ -39,7 +39,7 @@ if [[ "$vpc_mode" == import ]]; then
     state_set STACKS_AFTER_MA "$test_vpc_stack"
     log "Deploying the test VPC $test_vpc_stack"
     aws cloudformation create-stack --stack-name "$test_vpc_stack" \
-        --template-body "file://$CI_AWS_DIR/templates/test-vpc.json" \
+        --template-body "file://$CI_TESTS_DIR/templates/test-vpc.json" \
         --parameters "ParameterKey=Stage,ParameterValue=$stage"
     aws cloudformation wait stack-create-complete --stack-name "$test_vpc_stack"
     vpc_id=$(aws cloudformation describe-stacks --stack-name "$test_vpc_stack" \
@@ -50,7 +50,7 @@ if [[ "$vpc_mode" == import ]]; then
     bootstrap_args=(--deploy-import-vpc-cfn --vpc-id "$vpc_id" --subnet-ids "$subnet_ids")
 fi
 
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     "${bootstrap_args[@]}" --use-general-node-pool
 state_load
 

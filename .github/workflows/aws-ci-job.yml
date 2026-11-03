@@ -44,7 +44,7 @@ on:
         default: false
       collect-logs:
         description: >-
-          Before cleanup, run ci/aws/collect-logs.sh (Kubernetes, CloudFormation and test logs, masked) and upload the
+          Before cleanup, run ci/aws/shared/collect-logs.sh (Kubernetes, CloudFormation and test logs, masked) and upload the
           result as the artifact `artifact-name`
         required: false
         type: boolean
@@ -168,7 +168,7 @@ jobs:
         timeout-minutes: 15
         run: |
           set -o pipefail
-          bash -uo pipefail "$CI_AWS"/collect-logs.sh "$RUNNER_TEMP/ci-logs" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
+          bash -uo pipefail "$CI_AWS"/shared/collect-logs.sh "$RUNNER_TEMP/ci-logs" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
 
       - name: Cleanup
         id: cleanup
@@ -176,7 +176,7 @@ jobs:
         timeout-minutes: 75
         env:
           CLEANUP_COMMAND: ${{ inputs.cleanup }}
-          # Failed runs keep their CloudWatch log groups for 14 days (cleanup_log_groups in ci/aws/lib.sh).
+          # Failed runs keep their CloudWatch log groups for 14 days (cleanup_log_groups in ci/aws/shared/lib.sh).
           RUN_OUTCOME: ${{ steps.run.outcome }}
         run: |
           set -o pipefail

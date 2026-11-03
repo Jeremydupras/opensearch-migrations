@@ -1,6 +1,6 @@
 ---
 # AWS integration tests, run from GitHub Actions through the OIDC roles in the CI test account (replaces the AWS jobs
-# in jenkins_tests.yml). Each test is a script under ci/aws/ run by aws-ci-job.yml; its teardown always runs, and every
+# in jenkins_tests.yml). Each test is a script under ci/aws/tests/ run by aws-ci-job.yml; its teardown always runs, and every
 # run deploys into its own stage.
 #   Scheduled runs (twice a day, the "all" set) and manual runs use osm-ci-main. "all" runs every test Jenkins ran
 #   periodically.
@@ -102,8 +102,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-integ-test.sh --source-version ES_7.10 --target-version OS_1.3 --test-ids 0001,0002'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-integ-test.sh --source-version ES_7.10 --target-version OS_1.3 --test-ids 0001,0002'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 210
       timeout-minutes: 300
       artifact-name: eks-integ-logs
@@ -140,8 +140,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-cfn-test.sh --vpc-mode create'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-cfn-test.sh --vpc-mode create'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
       artifact-name: eks-cfn-create-vpc-logs
@@ -178,8 +178,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-cfn-test.sh --vpc-mode import'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-cfn-test.sh --vpc-mode import'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
       artifact-name: eks-cfn-import-vpc-logs
@@ -216,8 +216,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-cdc-test.sh --test-ids 0031,0032,0033,0040,0042'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-cdc-test.sh --test-ids 0031,0032,0033,0040,0042'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
       artifact-name: eks-cdc-full-e2e-logs
@@ -254,8 +254,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-cdc-aoss-test.sh --test-ids 0034,0041'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-cdc-aoss-test.sh --test-ids 0034,0041'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 240
       timeout-minutes: 330
       artifact-name: eks-cdc-aoss-e2e-logs
@@ -292,8 +292,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-cdc-test.sh --stage-base esosk6 --test-ids 0080'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-cdc-test.sh --stage-base esosk6 --test-ids 0080'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
       artifact-name: eks-cdc-k6-load-logs
@@ -330,8 +330,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-aoss-test.sh --stage-base aosss'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aosss'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
       artifact-name: eks-aoss-search-logs
@@ -356,8 +356,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-aoss-test.sh --stage-base aosst'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aosst'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
       artifact-name: eks-aoss-timeseries-logs
@@ -382,8 +382,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-aoss-test.sh --stage-base aossv'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aossv'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
       artifact-name: eks-aoss-vector-logs
@@ -420,8 +420,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-byos-test.sh'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-byos-test.sh'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
       artifact-name: eks-byos-logs
@@ -458,8 +458,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/eks-isolated-test.sh'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/eks-isolated-test.sh'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 240
       timeout-minutes: 330
       artifact-name: eks-isolated-logs
@@ -496,8 +496,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/cdk-integ-test.sh --test full-es68'
-      cleanup: '"$CI_AWS"/cdk-integ-cleanup.sh'
+      run: '"$CI_AWS"/tests/cdk-integ-test.sh --test full-es68'
+      cleanup: '"$CI_AWS"/shared/cdk-integ-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
       artifact-name: full-es68-logs
@@ -523,8 +523,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/cdk-integ-test.sh --test rfs-default'
-      cleanup: '"$CI_AWS"/cdk-integ-cleanup.sh'
+      run: '"$CI_AWS"/tests/cdk-integ-test.sh --test rfs-default'
+      cleanup: '"$CI_AWS"/shared/cdk-integ-cleanup.sh'
       run-timeout-minutes: 270
       timeout-minutes: 355
       artifact-name: rfs-default-logs
@@ -550,8 +550,8 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/solutions-cfn-test.sh'
-      cleanup: '"$CI_AWS"/eks-cleanup.sh'
+      run: '"$CI_AWS"/tests/solutions-cfn-test.sh'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 120
       timeout-minutes: 210
       artifact-name: solutions-cfn-create-vpc-logs

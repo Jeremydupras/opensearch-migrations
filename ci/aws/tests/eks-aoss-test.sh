@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # AOSS collection test, ported from vars/eksAOSSIntegPipeline.groovy (search, time-series and vector covers): bootstraps
 # Migration Assistant on EKS, deploys SEARCH, TIMESERIES and VECTORSEARCH collections in the MA VPC, then runs test 0021,
-# which migrates a snapshot from the snapshot library into each collection. Run ci/aws/eks-cleanup.sh afterwards.
+# which migrates a snapshot from the snapshot library into each collection. Run ci/aws/shared/eks-cleanup.sh afterwards.
 #
 # Snapshots come from this account's copy of the snapshot library (see snapshot_library in lib.sh).
 #
 # Usage: eks-aoss-test.sh [--stage-base aosss|aosst|aossv] [--s3-repo-uri URI] [--snapshot-name NAME]
 #                         [--source-version OS_1.3] [--monitor-retry-limit 33]
 set -euo pipefail
-source "$(dirname "$0")/lib.sh"
+source "$(dirname "$0")/../shared/lib.sh"
 
 stage_base=aosss source_version=OS_1.3 monitor_retry_limit=33
 s3_repo_uri="$(snapshot_library)/aoss-osb-data/os1x-aoss-osb-data/"
@@ -43,7 +43,7 @@ Snapshot:         $snapshot_name at $s3_repo_uri ($source_version)
 INFO
 aws sts get-caller-identity --query Arn --output text
 
-"$CI_AWS_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
+"$CI_SHARED_DIR/bootstrap-ma.sh" --stack-name "$MA_STACK_NAME" --stage "$stage" --kube-context "$KUBE_CONTEXT" \
     --use-general-node-pool
 state_load
 [[ -n "${MA_VPC_ID:-}" && -n "${EKS_CLUSTER_NAME:-}" ]] || die "Missing VPC_ID / EKS cluster name exports on $MA_STACK_NAME"
