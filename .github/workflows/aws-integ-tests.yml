@@ -1,6 +1,6 @@
 ---
-# AWS integration tests, run from GitHub Actions through the OIDC roles in the CI test account (replaces the AWS jobs
-# in jenkins_tests.yml). Each test is a script under ci/aws/tests/ run by aws-ci-job.yml; its teardown always runs, and every
+# AWS integration tests, run from GitHub Actions through the OIDC roles in the CI test account (replaced the AWS jobs
+# of the removed jenkins_tests.yml). Each test is a script under ci/aws/tests/ run by aws-ci-job.yml; its teardown always runs, and every
 # run deploys into its own stage.
 #   Scheduled runs (twice a day, the "all" set) and manual runs use osm-ci-main. "all" runs every test Jenkins ran
 #   periodically.
