@@ -68,6 +68,22 @@ on:
         required: false
         type: boolean
         default: false
+      chain-name:
+        description: >-
+          For a test too long for one job (see chain_state_uri in ci/aws/shared/lib.sh): if `run` leaves
+          TEST_STATUS=running in the CI state, save the state for the next job and skip diagnostics and cleanup
+        required: false
+        type: string
+        default: ''
+      chain-resume:
+        description: 'Restore the state an earlier job of the chain `chain-name` saved, before `run`'
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      running:
+        description: "'true' if the chained test is still running and the next job of the chain should carry on"
+        value: ${{ jobs.run.outputs.running }}
     secrets:
       MIGRATIONS_CI_MAIN_ROLE:
         required: false
@@ -83,6 +99,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    outputs:
+      running: ${{ steps.chain.outputs.running }}
     env:
       POOL: ${{ inputs.pool }}
       CI_POOL: ${{ inputs.release && 'release' || inputs.pool }}
@@ -152,6 +170,14 @@ jobs:
         if: env.ROLE_ARN == ''
         run: echo "::warning::No role secret for pool '$POOL'; the command runs without AWS credentials"
 
+      - name: Restore the chain state
+        if: inputs.chain-resume
+        env:
+          CHAIN_NAME: ${{ inputs.chain-name }}
+        run: |
+          set -o pipefail
+          bash -euo pipefail "$CI_AWS"/shared/chain-state.sh restore "$CHAIN_NAME" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
+
       - name: Run
         id: run
         timeout-minutes: ${{ inputs.run-timeout-minutes }}
@@ -162,9 +188,27 @@ jobs:
           # Account IDs are masked in public logs, as in opensearch-ci.
           bash -euo pipefail -c "$RUN_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
 
+      - name: Hand off to the next job
+        id: chain
+        if: always() && inputs.chain-name != ''
+        env:
+          CHAIN_NAME: ${{ inputs.chain-name }}
+          RUN_OUTCOME: ${{ steps.run.outcome }}
+        run: |
+          set -o pipefail
+          state="${CI_REPO_ROOT:-$GITHUB_WORKSPACE}/tmp/ci-aws-state.env"
+          status=$(sed -nE "s/^export TEST_STATUS=(.*)$/\1/p" "$state" 2>/dev/null | tail -1)
+          if [[ "$RUN_OUTCOME" == success && "$status" == running ]]; then
+            bash -euo pipefail "$CI_AWS"/shared/chain-state.sh save "$CHAIN_NAME" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
+            echo "running=true" >> "$GITHUB_OUTPUT"
+            echo "The test is still running; the next job of the chain carries on. Diagnostics and cleanup come at the end."
+          else
+            echo "running=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Collect logs
         # Before cleanup, while the cluster and stacks still exist.
-        if: always() && inputs.collect-logs && env.ROLE_ARN != ''
+        if: always() && inputs.collect-logs && env.ROLE_ARN != '' && steps.chain.outputs.running != 'true'
         timeout-minutes: 15
         run: |
           set -o pipefail
@@ -172,7 +216,7 @@ jobs:
 
       - name: Cleanup
         id: cleanup
-        if: always() && inputs.cleanup != ''
+        if: always() && inputs.cleanup != '' && steps.chain.outputs.running != 'true'
         timeout-minutes: 75
         env:
           CLEANUP_COMMAND: ${{ inputs.cleanup }}
@@ -182,15 +226,21 @@ jobs:
           set -o pipefail
           bash -uo pipefail -c "$CLEANUP_COMMAND" 2>&1 | sed -E 's/[0-9]{12}/[MASKED]/g'
 
+      - name: Delete the chain state
+        if: always() && inputs.chain-name != '' && steps.chain.outputs.running != 'true' && env.ROLE_ARN != ''
+        env:
+          CHAIN_NAME: ${{ inputs.chain-name }}
+        run: bash -uo pipefail "$CI_AWS"/shared/chain-state.sh delete "$CHAIN_NAME"
+
       - name: Summary
         if: always()
         env:
-          RUN_OUTCOME: ${{ steps.run.outcome }}
-          CLEANUP_OUTCOME: ${{ inputs.cleanup != '' && steps.cleanup.outcome || 'none' }}
+          RUN_OUTCOME: ${{ steps.chain.outputs.running == 'true' && 'running' || steps.run.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.chain.outputs.running == 'true' && 'after the test' || (inputs.cleanup != '' && steps.cleanup.outcome || 'none') }}
           TEST_NAME: ${{ inputs.test-name }}
           COLLECT_LOGS: ${{ inputs.collect-logs }}
         run: |
-          icon() { case "$1" in success) echo "✅" ;; failure) echo "❌" ;; cancelled) echo "⏹️" ;; *) echo "➖" ;; esac; }
+          icon() { case "$1" in success) echo "✅" ;; failure) echo "❌" ;; cancelled) echo "⏹️" ;; running) echo "⏳" ;; *) echo "➖" ;; esac; }
           state="${CI_REPO_ROOT:-$GITHUB_WORKSPACE}/tmp/ci-aws-state.env"
           stage=$(sed -nE "s/^export STAGE=(.*)$/\1/p" "$state" 2>/dev/null | tail -1)
           {

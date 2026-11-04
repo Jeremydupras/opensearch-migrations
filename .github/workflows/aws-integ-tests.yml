@@ -7,6 +7,8 @@
 #   Release canary: test the latest x.y.z release tag, with the ci/aws scripts from this run's ref.
 #   PRs: a maintainer adds the test's run-* label, then approves the run in migrations-ci-pr; uses osm-ci-pr.
 #        rfs-default, solutions-cfn-create-vpc and the AOSS time-series/vector tests have no PR trigger, as on Jenkins.
+#   Large BYOS presets (eks-byos-large-es7x/-es6x, up to ~18h): only by their own run-*-tests label or a manual run.
+#        Each runs as a chain of jobs (start, then up to 3 waits); see chain-name in aws-ci-job.yml.
 name: AWS integ tests
 
 on:
@@ -27,6 +29,8 @@ on:
           - eks-aoss-timeseries
           - eks-aoss-vector
           - eks-byos
+          - eks-byos-large-es7x
+          - eks-byos-large-es6x
           - eks-isolated
           - full-es68
           - rfs-default
@@ -49,7 +53,7 @@ jobs:
   # On PRs, nothing reads PR data until at least one test's gate allows the run (sanitize-repo-details.yml reads the
   # PR's branch name). Unlabeled PRs only run the gates, which read the event in JavaScript and call the GitHub API.
   sanitize-input:
-    needs: [eks-integ-gate, eks-cfn-create-vpc-gate, eks-cfn-import-vpc-gate, eks-cdc-full-e2e-gate, eks-cdc-aoss-e2e-gate, eks-cdc-k6-load-gate, eks-aoss-search-gate, eks-byos-gate, eks-isolated-gate, full-es68-gate]
+    needs: [eks-integ-gate, eks-cfn-create-vpc-gate, eks-cfn-import-vpc-gate, eks-cdc-full-e2e-gate, eks-cdc-aoss-e2e-gate, eks-cdc-k6-load-gate, eks-aoss-search-gate, eks-byos-gate, eks-isolated-gate, full-es68-gate, eks-byos-large-es7x-gate, eks-byos-large-es6x-gate]
     if: |
       !cancelled() && (github.event_name != 'pull_request_target' || contains(needs.*.outputs.allowed, 'true'))
     uses: ./.github/workflows/sanitize-repo-details.yml
@@ -437,6 +441,238 @@ jobs:
       MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
       MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
 
+  eks-byos-large-es7x-gate:
+    if: github.event_name == 'pull_request_target'
+    uses: ./.github/workflows/aws-ci-pr-gate.yml
+    permissions:
+      issues: read
+      pull-requests: read
+    with:
+      label: run-eks-byos-large-es7x-tests
+
+  # BYOS large-es7x-24B (ES 7.10, 24B docs, 5.8 TB): up to ~18h, so it runs as a chain of jobs (each under GitHub's 6h limit) while the test itself runs in the
+  # migration console pod. Only by its label or a manual run; not in "all" or the schedule (24 r8g.8xlarge target nodes,
+  # 90 RFS workers).
+  eks-byos-large-es7x-test:
+    needs: [resolve-ref, eks-byos-large-es7x-gate]
+    if: |
+      always() && needs.resolve-ref.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && inputs.test == 'eks-byos-large-es7x') ||
+        needs.eks-byos-large-es7x-gate.outputs.allowed == 'true')
+    uses: ./.github/workflows/aws-ci-job.yml
+    concurrency:
+      group: aws-integ-eks-byos-large-es7x-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/tests/eks-byos-test.sh --preset large-es7x-24B --stage-base byosl7 --chain-deadline-minutes 285'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es7x
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es7x
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es7x-wait-1-test:
+    # No concurrency group: a pending job in a shared group can be cancelled, which would break the chain.
+    needs: [resolve-ref, eks-byos-large-es7x-test]
+    if: always() && needs.eks-byos-large-es7x-test.outputs.running == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es7x
+      chain-resume: true
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es7x (part 2)
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es7x-wait-2-test:
+    # No concurrency group: a pending job in a shared group can be cancelled, which would break the chain.
+    needs: [resolve-ref, eks-byos-large-es7x-wait-1-test]
+    if: always() && needs.eks-byos-large-es7x-wait-1-test.outputs.running == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es7x
+      chain-resume: true
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es7x (part 3)
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es7x-wait-3-test:
+    # No concurrency group: a pending job in a shared group can be cancelled, which would break the chain.
+    needs: [resolve-ref, eks-byos-large-es7x-wait-2-test]
+    if: always() && needs.eks-byos-large-es7x-wait-2-test.outputs.running == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285 --last'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es7x
+      chain-resume: true
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es7x (part 4)
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es6x-gate:
+    if: github.event_name == 'pull_request_target'
+    uses: ./.github/workflows/aws-ci-pr-gate.yml
+    permissions:
+      issues: read
+      pull-requests: read
+    with:
+      label: run-eks-byos-large-es6x-tests
+
+  # BYOS large-es6x-20B (ES 6.8, 20B docs, 5.2 TB): up to ~18h, so it runs as a chain of jobs (each under GitHub's 6h limit) while the test itself runs in the
+  # migration console pod. Only by its label or a manual run; not in "all" or the schedule (24 r8g.8xlarge target nodes,
+  # 90 RFS workers).
+  eks-byos-large-es6x-test:
+    needs: [resolve-ref, eks-byos-large-es6x-gate]
+    if: |
+      always() && needs.resolve-ref.result == 'success' && (
+        (github.event_name == 'workflow_dispatch' && inputs.test == 'eks-byos-large-es6x') ||
+        needs.eks-byos-large-es6x-gate.outputs.allowed == 'true')
+    uses: ./.github/workflows/aws-ci-job.yml
+    concurrency:
+      group: aws-integ-eks-byos-large-es6x-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/tests/eks-byos-test.sh --preset large-es6x-20B --stage-base byosl6 --chain-deadline-minutes 285'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es6x
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es6x
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es6x-wait-1-test:
+    # No concurrency group: a pending job in a shared group can be cancelled, which would break the chain.
+    needs: [resolve-ref, eks-byos-large-es6x-test]
+    if: always() && needs.eks-byos-large-es6x-test.outputs.running == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es6x
+      chain-resume: true
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es6x (part 2)
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es6x-wait-2-test:
+    # No concurrency group: a pending job in a shared group can be cancelled, which would break the chain.
+    needs: [resolve-ref, eks-byos-large-es6x-wait-1-test]
+    if: always() && needs.eks-byos-large-es6x-wait-1-test.outputs.running == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es6x
+      chain-resume: true
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es6x (part 3)
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
+  eks-byos-large-es6x-wait-3-test:
+    # No concurrency group: a pending job in a shared group can be cancelled, which would break the chain.
+    needs: [resolve-ref, eks-byos-large-es6x-wait-2-test]
+    if: always() && needs.eks-byos-large-es6x-wait-2-test.outputs.running == 'true'
+    uses: ./.github/workflows/aws-ci-job.yml
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      pool: ${{ github.event_name == 'pull_request_target' && 'pr' || 'main' }}
+      release: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+      commit: ${{ needs.resolve-ref.outputs.commit }}
+      scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
+      setup-env: true
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285 --last'
+      cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
+      chain-name: eks-byos-large-es6x
+      chain-resume: true
+      run-timeout-minutes: 290
+      timeout-minutes: 355
+      test-name: eks-byos-large-es6x (part 4)
+    secrets:
+      MIGRATIONS_CI_MAIN_ROLE: ${{ secrets.MIGRATIONS_CI_MAIN_ROLE }}
+      MIGRATIONS_CI_PR_ROLE: ${{ secrets.MIGRATIONS_CI_PR_ROLE }}
+
   eks-isolated-gate:
     if: github.event_name == 'pull_request_target'
     uses: ./.github/workflows/aws-ci-pr-gate.yml
@@ -572,7 +808,7 @@ jobs:
   all-aws-integ-checks-pass:
     # One results table for the run, and the aggregate check. Tests that didn't run (not selected, or no label on a
     # PR, which also skips resolve-ref) count as passing.
-    needs: [resolve-ref, eks-integ-test, eks-cfn-create-vpc-test, eks-cfn-import-vpc-test, eks-cdc-full-e2e-test, eks-cdc-aoss-e2e-test, eks-cdc-k6-load-test, eks-aoss-search-test, eks-aoss-timeseries-test, eks-aoss-vector-test, eks-byos-test, eks-isolated-test, full-es68-test, rfs-default-test, solutions-cfn-create-vpc-test]
+    needs: [resolve-ref, eks-integ-test, eks-cfn-create-vpc-test, eks-cfn-import-vpc-test, eks-cdc-full-e2e-test, eks-cdc-aoss-e2e-test, eks-cdc-k6-load-test, eks-aoss-search-test, eks-aoss-timeseries-test, eks-aoss-vector-test, eks-byos-test, eks-isolated-test, full-es68-test, rfs-default-test, solutions-cfn-create-vpc-test, eks-byos-large-es7x-test, eks-byos-large-es7x-wait-1-test, eks-byos-large-es7x-wait-2-test, eks-byos-large-es7x-wait-3-test, eks-byos-large-es6x-test, eks-byos-large-es6x-wait-1-test, eks-byos-large-es6x-wait-2-test, eks-byos-large-es6x-wait-3-test]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
