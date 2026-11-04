@@ -31,11 +31,16 @@ jobs:
     with:
       label: run-aws-smoke-test
 
+  # On PRs, nothing reads PR data until the gate allows the run.
   sanitize-input:
+    needs: pr-gate
+    if: |
+      !cancelled() && (github.event_name != 'pull_request_target' || needs.pr-gate.outputs.allowed == 'true')
     uses: ./.github/workflows/sanitize-repo-details.yml
 
   smoke-main:
-    if: github.event_name != 'pull_request_target'
+    if: |
+      !cancelled() && github.event_name != 'pull_request_target' && needs.sanitize-input.result == 'success'
     needs: sanitize-input
     uses: ./.github/workflows/aws-ci-job.yml
     permissions:
@@ -43,6 +48,8 @@ jobs:
       contents: read
     with:
       pool: main
+      collect-logs: false
+      test-name: smoke-main
       commit: ${{ needs.sanitize-input.outputs.commit_hash }}
       run: |
         if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
@@ -57,13 +64,16 @@ jobs:
 
   smoke-pr:
     needs: [pr-gate, sanitize-input]
-    if: needs.pr-gate.outputs.allowed == 'true'
+    if: |
+      !cancelled() && needs.pr-gate.outputs.allowed == 'true' && needs.sanitize-input.result == 'success'
     uses: ./.github/workflows/aws-ci-job.yml
     permissions:
       id-token: write
       contents: read
     with:
       pool: pr
+      collect-logs: false
+      test-name: smoke-pr
       commit: ${{ needs.sanitize-input.outputs.commit_hash }}
       run: |
         if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then

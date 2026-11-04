@@ -11,12 +11,14 @@ const UPSTREAM: GitHubRepoSettings = {
     pinWorkflowClaims: true,
 };
 
-function synth(github: GitHubRepoSettings = UPSTREAM, testRoleManagedPolicyArns = ['arn:aws:iam::aws:policy/job-function/ViewOnlyAccess']) {
+function synth(github: GitHubRepoSettings = UPSTREAM, testRoleManagedPolicyArns = ['arn:aws:iam::aws:policy/job-function/ViewOnlyAccess'],
+               snapshotCopyPrincipalArn?: string) {
     const app = new App();
     const stack = new CiInfraStack(app, 'osm-ci-infra', {
         env: { account: '111122223333', region: 'us-east-1' },
         github,
         testRoleManagedPolicyArns,
+        snapshotCopyPrincipalArn,
     });
     return Template.fromStack(stack);
 }
@@ -109,6 +111,15 @@ describe('CiInfraStack', () => {
         ]);
     });
 
+    test('boundary blocks only the infra CDK bootstrap roles, leaving the osmtest bootstrap to tests', () => {
+        const [boundary] = Object.values(synth().findResources('AWS::IAM::ManagedPolicy', {
+            Properties: { ManagedPolicyName: 'osm-ci-test-boundary' },
+        }));
+        const statement = boundary.Properties.PolicyDocument.Statement
+            .find((s: { Sid: string }) => s.Sid === 'NoCdkBootstrapRoles');
+        expect(statement.Resource).toBe('arn:aws:iam::111122223333:role/cdk-hnb659fds-*');
+    });
+
     test('infra deploy role can only assume the CDK bootstrap roles', () => {
         const template = synth();
         template.hasResourceProperties('AWS::IAM::Role', {
@@ -125,5 +136,40 @@ describe('CiInfraStack', () => {
                 }],
             },
         });
+    });
+
+    test('snapshot library is retained, private, readable by MA pods and writable only by admins', () => {
+        const template = synth();
+        template.hasResource('AWS::S3::Bucket', {
+            DeletionPolicy: 'Retain',
+            Properties: {
+                BucketName: 'migrations-snapshots-library-111122223333-us-east-1',
+                PublicAccessBlockConfiguration: {
+                    BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true,
+                },
+                OwnershipControls: { Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] },
+            },
+        });
+        const [policy] = Object.values(template.findResources('AWS::S3::BucketPolicy'));
+        const deny = policy.Properties.PolicyDocument.Statement.find((s: { Sid?: string }) => s.Sid === 'OnlyAdminsWrite');
+        expect(deny.Effect).toBe('Deny');
+        expect(deny.Condition).toEqual({ ArnNotLike: { 'aws:PrincipalArn': [
+            'arn:aws:iam::111122223333:role/Admin',
+            'arn:aws:iam::111122223333:role/cdk-hnb659fds-cfn-exec-role-111122223333-us-east-1',
+        ] } });
+        expect(policy.Properties.PolicyDocument.Statement.some((s: { Sid?: string }) => s.Sid === 'AllowSnapshotCopyIn')).toBe(false);
+    });
+
+    test('the copy role gets write access only while it is configured', () => {
+        const copier = 'arn:aws:iam::329599636015:role/Admin';
+        const template = synth(UPSTREAM, ['arn:aws:iam::aws:policy/job-function/ViewOnlyAccess'], copier);
+        const [policy] = Object.values(template.findResources('AWS::S3::BucketPolicy'));
+        const statements = policy.Properties.PolicyDocument.Statement;
+        const allow = statements.find((s: { Sid?: string }) => s.Sid === 'AllowSnapshotCopyIn');
+        expect(allow.Principal).toEqual({ AWS: copier });
+        expect(allow.Action).toContain('s3:PutObject');
+        expect(allow.Action).not.toContain('s3:DeleteObject');
+        const deny = statements.find((s: { Sid?: string }) => s.Sid === 'OnlyAdminsWrite');
+        expect(deny.Condition.ArnNotLike['aws:PrincipalArn']).toContain(copier);
     });
 });

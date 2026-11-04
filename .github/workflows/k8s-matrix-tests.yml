@@ -1,0 +1,116 @@
+---
+# Every source → target pair on kind, ported from vars/k8sMatrixTest.groovy. Each pair runs the test IDs of its
+# source's vars/k8sLocal*Test.groovy (as the Jenkins matrix did through its child jobs). Needs no AWS access.
+#   Scheduled runs: twice a day on main.
+#   Release canary: test the latest x.y.z release tag (replaces the Jenkins release-k8s-local-* canaries), with the
+#   GitHub-runner CI files from this run's ref (CI_FILES in k8s-local-test.yml).
+name: K8s matrix tests
+
+on:
+  schedule:
+    # Off the hour, and offset from aws-integ-tests.yml so the two don't compete for runners.
+    - cron: '47 0,12 * * *'
+  workflow_dispatch:
+    inputs:
+      source-version:
+        description: 'Source version'
+        type: choice
+        options: [all, ES_1.5, ES_2.4, ES_5.6, ES_6.8, ES_7.10, ES_8.19, SOLR_6.6, SOLR_7.7, SOLR_8.11, SOLR_9.8]
+        default: all
+      target-version:
+        description: 'Target version'
+        type: choice
+        options: [all, OS_1.3, OS_2.19, OS_3.1]
+        default: all
+      release-canary:
+        description: 'Test the latest release tag instead of this branch'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      ref: ${{ steps.plan.outputs.ref }}
+      ci_files_ref: ${{ steps.plan.outputs.ci_files_ref }}
+    steps:
+      - id: plan
+        env:
+          # Keep in sync with vars/migrationVersions.groovy
+          SOURCES: 'ES_1.5 ES_2.4 ES_5.6 ES_6.8 ES_7.10 ES_8.19 SOLR_6.6 SOLR_7.7 SOLR_8.11 SOLR_9.8'
+          TARGETS: 'OS_1.3 OS_2.19 OS_3.1'
+          SOURCE: ${{ inputs.source-version || 'all' }}
+          TARGET: ${{ inputs.target-version || 'all' }}
+          CANARY: ${{ github.event_name == 'workflow_dispatch' && inputs.release-canary }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          # Test IDs per source, from vars/k8sLocal*Test.groovy
+          test_ids() {
+            case "$1" in
+              ES_1.5|ES_2.4) echo '0001,0002,0003' ;;
+              ES_5.6) echo '0001,0002,0003,0004,0005' ;;
+              ES_6.8) echo '0001,0002,0003,0006' ;;
+              ES_7.10) echo '0001,0002,0003,0006,0008,0020' ;;
+              ES_8.19) echo '0001,0002,0003,0020,0035,0040' ;;
+              SOLR_*) echo '0071,0070' ;;
+              *) echo "::error::No test IDs for source $1" >&2; return 1 ;;
+            esac
+          }
+          [[ "$SOURCE" == all ]] && sources=$SOURCES || sources=$SOURCE
+          [[ "$TARGET" == all ]] && targets=$TARGETS || targets=$TARGET
+          entries=()
+          for s in $sources; do
+            for t in $targets; do
+              entries+=("$(jq -cn --arg s "$s" --arg t "$t" --arg ids "$(test_ids "$s")" \
+                '{source: $s, target: $t, "test-ids": $ids}')")
+            done
+          done
+          matrix=$(printf '%s\n' "${entries[@]}" | jq -cs '{include: .}')
+          echo "Pairs: $(jq '.include | length' <<<"$matrix")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          if [[ "$CANARY" == true ]]; then
+            tag=$(git ls-remote --tags "$REPO_URL" | { grep -oE 'refs/tags/[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sed 's|refs/tags/||' | sort -V | tail -1)
+            [[ -n "$tag" ]] || { echo "::error::No x.y.z release tag found"; exit 1; }
+            echo "Release canary: testing $tag with the CI files from $GITHUB_SHA"
+            echo "ref=refs/tags/$tag" >> "$GITHUB_OUTPUT"
+            echo "ci_files_ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+            echo "ci_files_ref=" >> "$GITHUB_OUTPUT"
+          fi
+
+  k8s-local-test:
+    needs: plan
+    strategy:
+      fail-fast: false
+      # Leaves runners for the other workflows; the matrix has 30 pairs.
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    uses: ./.github/workflows/k8s-local-test.yml
+    with:
+      source-version: ${{ matrix.source }}
+      target-version: ${{ matrix.target }}
+      test-ids: ${{ matrix.test-ids }}
+      ref: ${{ needs.plan.outputs.ref }}
+      ci-files-ref: ${{ needs.plan.outputs.ci_files_ref }}
+
+  all-k8s-matrix-tests-pass:
+    needs: [plan, k8s-local-test]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - if: ${{ contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'failure') || needs.k8s-local-test.result != 'success' }}
+        run: |
+          echo "One or more pairs cancelled, failed or didn't run" && exit 1
+      - run: |
+          echo '## :heavy_check_mark: All k8s matrix tests pass' >> "$GITHUB_STEP_SUMMARY"
