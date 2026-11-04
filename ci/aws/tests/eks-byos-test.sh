@@ -4,18 +4,23 @@
 # Run ci/aws/shared/eks-cleanup.sh afterwards, whatever the outcome.
 #
 # Snapshots come from this account's copy of the snapshot library (see snapshot_library in lib.sh).
-# The large presets (5-6 TB, 90 workers) ran up to 18h on Jenkins and don't fit in a 6h GitHub-hosted job.
+# The large presets (5-6 TB, 90 workers) run up to 18h, longer than a 6h GitHub-hosted job. With
+# --chain-deadline-minutes N, the script starts the test and follows it until N minutes after the script started; if the
+# test is still running then, it records that (TEST_STATUS=running) and exits 0, and the next job of the chain follows it
+# with ci/aws/shared/wait-for-console-test.sh. The test itself runs in the migration console pod, so it carries on
+# between jobs.
 #
 # Usage: eks-byos-test.sh [--preset custom|small-es5x-300k|small-es7x-osb|large-es7x-24B|large-es6x-20B|large-es5x]
 #                         [--s3-repo-uri URI --snapshot-name NAME --source-version V --rfs-workers N --target-size default|large]
 #                         [--target-version OS_2.19] [--test-ids 0010] [--monitor-retry-limit 1000000]
+#                         [--stage-base eksbyos] [--chain-deadline-minutes N]
 set -euo pipefail
 source "$(dirname "$0")/../shared/lib.sh"
 
 library=$(snapshot_library)
 preset=custom target_version=OS_2.19 test_ids=0010 monitor_retry_limit=1000000
 s3_repo_uri="$library/ma_osb_data/es7x-osb-data/" snapshot_name=es7x-osb-data source_version=ES_7.10
-rfs_workers=1 target_size=default
+rfs_workers=1 target_size=default chain_deadline_minutes="" stage_base=eksbyos
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --preset) preset="$2"; shift 2 ;;
@@ -27,6 +32,8 @@ while [[ $# -gt 0 ]]; do
         --target-version) target_version="$2"; shift 2 ;;
         --test-ids) test_ids="$2"; shift 2 ;;
         --monitor-retry-limit) monitor_retry_limit="$2"; shift 2 ;;
+        --chain-deadline-minutes) chain_deadline_minutes="$2"; shift 2 ;;
+        --stage-base) stage_base="$2"; shift 2 ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
@@ -48,7 +55,7 @@ case "$target_size" in
     *) die "--target-size must be default or large" ;;
 esac
 
-stage=$(stage_name eksbyos)
+stage=$(stage_name "$stage_base")
 state_set STAGE "$stage"
 state_set KUBE_CONTEXT "migration-eks-$stage"
 state_set MA_STACK_NAME "Migration-Assistant-Infra-Create-VPC-eks-$stage-$REGION"
@@ -118,7 +125,35 @@ cd "$REPO_ROOT/libraries/testAutomation"
 pipenv install --deploy
 test_args=()
 [[ -n "$test_ids" && "$test_ids" != all ]] && test_args+=("--test-ids=$test_ids")
-# JSON test reports; collect-logs.sh adds them to the job's artifact.
+# JSON test reports; collect-logs.sh prints them.
 mkdir -p reports
-pipenv run app --test-reports-dir=./reports --source-version="$source_version" --target-version="$target_version" "${test_args[@]}" \
-    --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT"
+run_test=(pipenv run app --test-reports-dir=./reports --source-version="$source_version"
+          --target-version="$target_version" "${test_args[@]}"
+          --reuse-clusters --skip-delete --skip-install --kube-context="$KUBE_CONTEXT")
+if [[ -z "$chain_deadline_minutes" ]]; then
+    "${run_test[@]}"
+    exit
+fi
+
+# Chained: a known unique ID names the test's log, exit code and report files in the console pod, so a later job can
+# follow them (wait-for-console-test.sh). The console pod must stay the same pod for the whole test.
+state_set TEST_UNIQUE_ID "$stage"
+state_set TEST_CONSOLE_UID "$(kubectl --context="$KUBE_CONTEXT" -n ma get pod migration-console-0 -o jsonpath='{.metadata.uid}')"
+budget=$((chain_deadline_minutes - SECONDS / 60))
+[[ $budget -ge 5 ]] || budget=5
+log "Chained test: following it here for up to $budget minutes"
+rc=0
+timeout --kill-after=60 "${budget}m" "${run_test[@]}" --unique-id="$TEST_UNIQUE_ID" || rc=$?
+if [[ $rc -eq 124 || $rc -eq 137 ]]; then
+    # Timed out here. If the test happened to finish meanwhile, its exit code is in the pod.
+    if code=$(kubectl --context="$KUBE_CONTEXT" -n ma exec migration-console-0 -- \
+                  cat "/tmp/${TEST_UNIQUE_ID}_exit_code" 2>/dev/null) && [[ "$code" =~ ^[0-9]+$ ]]; then
+        rc=$code
+    else
+        state_set TEST_STATUS running
+        log "The test is still running in migration-console-0; the next job of the chain follows it"
+        exit 0
+    fi
+fi
+state_set TEST_STATUS finished
+exit "$rc"
