@@ -472,7 +472,7 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/tests/eks-byos-test.sh --preset small-es7x-osb --stage-base byosl7 --chain-deadline-minutes 1'
+      run: '"$CI_AWS"/tests/eks-byos-test.sh --preset large-es7x-24B --stage-base byosl7 --chain-deadline-minutes 285'
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       chain-name: eks-byos-large-es7x
       run-timeout-minutes: 290
@@ -496,7 +496,7 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 5'
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285'
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       chain-name: eks-byos-large-es7x
       chain-resume: true
@@ -521,7 +521,7 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 5'
+      run: '"$CI_AWS"/shared/wait-for-console-test.sh --max-minutes 285'
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       chain-name: eks-byos-large-es7x
       chain-resume: true
