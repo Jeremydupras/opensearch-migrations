@@ -155,3 +155,10 @@ cleanup_log_groups() {
     done
     return "$status"
 }
+
+# Chained tests: a test too long for one 6h job (the large BYOS presets) keeps running in the migration console pod
+# across several jobs. Each job hands the next its state through the test CDK bootstrap bucket in the account (private),
+# not a workflow artifact (public). Keyed by run and test name, so re-running a failed job finds it.
+chain_state_uri() {
+    printf 's3://cdk-osmtest-assets-%s-%s/ci-chain-state/%s/%s.tgz' "$(account_id)" "$REGION" "${GITHUB_RUN_ID:?}" "${1:?chain name}"
+}
