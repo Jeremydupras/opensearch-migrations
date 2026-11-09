@@ -18,6 +18,7 @@ import org.opensearch.migrations.metadata.IndexCreator;
 import org.opensearch.migrations.metadata.tracing.IMetadataMigrationContexts.ICreateIndexContext;
 import org.opensearch.migrations.parsing.ObjectNodeUtils;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.AllArgsConstructor;
@@ -69,6 +70,9 @@ public class IndexCreator_OS_2_11 implements IndexCreator {
             for (var field : problemMappingFields) {
                 ObjectNodeUtils.removeFieldsByPath(mappings, field);
             }
+            if (client.isCollectionRouted()) {
+                removeKnnVectorEngines(mappings, index.getName());
+            }
         }
 
         // Copy top-level metadata fields into settings.
@@ -116,6 +120,30 @@ public class IndexCreator_OS_2_11 implements IndexCreator {
             result.exception(e);
         }
         return result.build();
+    }
+
+    /**
+     * A collection-routed target only reaches NextGen OpenSearch Serverless collections, which choose the knn engine
+     * themselves and reject {@code method.engine} on knn_vector fields ("Field parameter 'engine' is not supported").
+     * Classic collections require it, so knn-to-serverless-metadata.js always sets it; remove it here instead.
+     * Walks objects and arrays so fields under properties, multi-fields and dynamic_templates are all covered.
+     */
+    static void removeKnnVectorEngines(JsonNode node, String indexName) {
+        if (node == null || !node.isContainerNode()) {
+            return;
+        }
+        if (node instanceof ObjectNode field
+            && "knn_vector".equals(field.path("type").asText())
+            && field.get("method") instanceof ObjectNode method
+            && method.has("engine")) {
+            log.atInfo()
+                .setMessage("Removing knn_vector method.engine '{}' from index '{}': NextGen collections choose the engine")
+                .addArgument(method.get("engine").asText())
+                .addArgument(indexName)
+                .log();
+            method.remove("engine");
+        }
+        node.elements().forEachRemaining(child -> removeKnnVectorEngines(child, indexName));
     }
 
     private boolean isServerlessTarget() {
