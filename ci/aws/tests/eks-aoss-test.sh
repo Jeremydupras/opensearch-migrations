@@ -4,17 +4,18 @@
 #         the snapshot library into each one.
 #   0024  deploys NextGen collections from test/aossNextGen/collections.yaml and migrates the same snapshot through the
 #         per-account endpoint, which routes each index to its collection.
-# Both run by default. Run ci/aws/shared/eks-cleanup.sh afterwards.
+#   0025  migrates vectors_faiss to the NextGen vector collection through its own endpoint (no routing).
+All three run by default. Run ci/aws/shared/eks-cleanup.sh afterwards.
 #
 # Snapshots come from this account's copy of the snapshot library (see snapshot_library in lib.sh).
 #
-# Usage: eks-aoss-test.sh [--stage-base aosss|aosst|aossv] [--test-ids 0021,0024] [--s3-repo-uri URI]
+# Usage: eks-aoss-test.sh [--stage-base aosss|aosst|aossv] [--test-ids 0021,0024,0025] [--s3-repo-uri URI]
 #                         [--snapshot-name NAME] [--source-version OS_1.3] [--monitor-retry-limit 33]
 set -euo pipefail
 source "$(dirname "$0")/../shared/lib.sh"
 
-supported_test_ids=(0021 0024)
-stage_base=aosss source_version=OS_1.3 monitor_retry_limit=33 test_ids_arg=0021,0024
+supported_test_ids=(0021 0024 0025)
+stage_base=aosss source_version=OS_1.3 monitor_retry_limit=33 test_ids_arg=0021,0024,0025
 s3_repo_uri="$(snapshot_library)/aoss-osb-data/os1x-aoss-osb-data/"
 snapshot_name=os1x-aoss-osb-data
 while [[ $# -gt 0 ]]; do
@@ -33,26 +34,35 @@ done
 # Commas, semicolons or spaces separate the IDs.
 read -r -a test_ids <<< "$(tr ',;' '  ' <<< "$test_ids_arg")"
 [[ ${#test_ids[@]} -gt 0 ]] || die "--test-ids must list tests from ${supported_test_ids[*]}"
-run_classic=false run_routing=false
+run_classic=false run_routing=false run_direct=false
 for id in "${test_ids[@]}"; do
     case "$id" in
         0021) run_classic=true ;;
         0024) run_routing=true ;;
+        0025) run_direct=true ;;
         *) die "--test-ids must list tests from ${supported_test_ids[*]}, got '$test_ids_arg'" ;;
     esac
 done
 
 # Release canaries test a tag's code with these scripts from main. Tags before 0024 have no NextGen template (and no
-# 0024 test in their migration console), so they run 0021 alone.
+# 0024 test in their migration console), and tags before 0025 have no 0025 test, so those tests are skipped.
 nextgen_template="$REPO_ROOT/test/aossNextGen/collections.yaml"
-if [[ "$run_routing" == true && ! -f "$nextgen_template" ]]; then
-    log "Skipping test 0024: this checkout has no test/aossNextGen/collections.yaml"
-    run_routing=false
-    [[ "$run_classic" == true ]] || die "Nothing to run: test 0024 needs test/aossNextGen/collections.yaml"
+direct_test="$REPO_ROOT/migrationConsole/lib/integ_test/integ_test/test_cases/aoss_nextgen_direct_tests.py"
+if [[ ! -f "$nextgen_template" ]]; then
+    [[ "$run_routing" == true || "$run_direct" == true ]] && log "Skipping tests 0024 and 0025: no test/aossNextGen/collections.yaml"
+    run_routing=false run_direct=false
 fi
+if [[ "$run_direct" == true && ! -f "$direct_test" ]]; then
+    log "Skipping test 0025: this checkout has no aoss_nextgen_direct_tests.py"
+    run_direct=false
+fi
+run_nextgen=false
+[[ "$run_routing" == true || "$run_direct" == true ]] && run_nextgen=true
+[[ "$run_classic" == true || "$run_nextgen" == true ]] || die "Nothing to run from '$test_ids_arg' in this checkout"
 selected_ids=()
 [[ "$run_classic" == true ]] && selected_ids+=(0021)
 [[ "$run_routing" == true ]] && selected_ids+=(0024)
+[[ "$run_direct" == true ]] && selected_ids+=(0025)
 selected_ids_csv=$(IFS=,; printf '%s' "${selected_ids[*]}")
 
 stage=$(stage_name "$stage_base")
@@ -64,7 +74,7 @@ state_set CLUSTER_INSIDE_MA_VPC true
 # Classic collections already use <stage>-search, and collection names are unique per account.
 nextgen_prefix="$stage-ng"
 nextgen_stack="AOSS-NextGen-$stage-$REGION"
-if [[ "$run_routing" == true ]]; then
+if [[ "$run_nextgen" == true ]]; then
     # The NextGen collections are outside the MA VPC, so cleanup deletes their stack after the MA stack.
     state_set STACKS_AFTER_MA "$nextgen_stack"
 fi
@@ -77,6 +87,7 @@ Region:           $REGION
 Test IDs:         $selected_ids_csv
 Classic:          $([[ "$run_classic" == true ]] && echo "SEARCH, TIMESERIES, VECTORSEARCH" || echo skipped)
 NextGen routing:  $([[ "$run_routing" == true ]] && echo "$nextgen_prefix-search, $nextgen_prefix-vectors" || echo skipped)
+NextGen direct:   $([[ "$run_direct" == true ]] && echo "$nextgen_prefix-vectors" || echo skipped)
 Snapshot:         $snapshot_name at $s3_repo_uri ($source_version)
 ================================================================
 INFO
@@ -112,7 +123,7 @@ if [[ "$run_classic" == true ]]; then
     )
 fi
 
-if [[ "$run_routing" == true ]]; then
+if [[ "$run_nextgen" == true ]]; then
     log "Deploying the NextGen collections ($nextgen_stack)"
     aws cloudformation deploy --stack-name "$nextgen_stack" --template-file "$nextgen_template" \
         --parameter-overrides "CollectionPrefix=$nextgen_prefix" "DataAccessPrincipals=$job_role,$pod_role"
