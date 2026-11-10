@@ -9,7 +9,7 @@ from .ma_argo_test_base import MATestUserArguments
 
 logger = logging.getLogger(__name__)
 
-DIRECT_TARGET = "nextgen-vectors"
+DIRECT_TARGET = "nextgen_vectors"
 DIRECT_INDICES = ["vectors_faiss"]
 
 
