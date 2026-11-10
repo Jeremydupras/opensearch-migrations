@@ -28,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 @AllArgsConstructor
 public class IndexCreator_OS_2_11 implements IndexCreator {
     private static final ObjectMapper mapper = new ObjectMapper();
+    private static final String KNN_ENGINE = "engine";
 
     /**
      * Maps top-level index metadata fields from the snapshot to their corresponding
@@ -69,9 +70,6 @@ public class IndexCreator_OS_2_11 implements IndexCreator {
             String[] problemMappingFields = { "_all" };
             for (var field : problemMappingFields) {
                 ObjectNodeUtils.removeFieldsByPath(mappings, field);
-            }
-            if (client.isCollectionRouted()) {
-                removeKnnVectorEngines(mappings, index.getName());
             }
         }
 
@@ -122,28 +120,21 @@ public class IndexCreator_OS_2_11 implements IndexCreator {
         return result.build();
     }
 
-    /**
-     * A collection-routed target only reaches NextGen OpenSearch Serverless collections, which choose the knn engine
-     * themselves and reject {@code method.engine} on knn_vector fields ("Field parameter 'engine' is not supported").
-     * Classic collections require it, so knn-to-serverless-metadata.js always sets it; remove it here instead.
-     * Walks objects and arrays so fields under properties, multi-fields and dynamic_templates are all covered.
-     */
-    static void removeKnnVectorEngines(JsonNode node, String indexName) {
+    static int removeKnnVectorEngines(JsonNode node) {
         if (node == null || !node.isContainerNode()) {
-            return;
+            return 0;
         }
+        var removed = 0;
         if (node instanceof ObjectNode field
             && "knn_vector".equals(field.path("type").asText())
             && field.get("method") instanceof ObjectNode method
-            && method.has("engine")) {
-            log.atInfo()
-                .setMessage("Removing knn_vector method.engine '{}' from index '{}': NextGen collections choose the engine")
-                .addArgument(method.get("engine").asText())
-                .addArgument(indexName)
-                .log();
-            method.remove("engine");
+            && method.remove(KNN_ENGINE) != null) {
+            removed++;
         }
-        node.elements().forEachRemaining(child -> removeKnnVectorEngines(child, indexName));
+        for (var child : (Iterable<JsonNode>) node::elements) {
+            removed += removeKnnVectorEngines(child);
+        }
+        return removed;
     }
 
     private boolean isServerlessTarget() {
@@ -278,6 +269,17 @@ public class IndexCreator_OS_2_11 implements IndexCreator {
             }
 
             log.info("Reattempting creation of index '{}' after removing unsupported mapping parameters: {}", indexName, unsupportedMappingParams);
+            return;
+        }
+
+        if (invalidResponse.isUnsupportedKnnEngine()) {
+            var removed = removeKnnVectorEngines(mappings);
+            if (removed == 0) {
+                log.debug("Target rejected the knn engine parameter, but index '{}' has no knn_vector method.engine to remove", indexName);
+                throw invalidResponse;
+            }
+            log.info("Reattempting creation of index '{}' after removing method.engine from {} knn_vector field(s); the target chooses the engine",
+                indexName, removed);
             return;
         }
 
