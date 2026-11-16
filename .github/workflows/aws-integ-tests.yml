@@ -42,13 +42,15 @@ on:
         type: boolean
         default: false
       aoss-test-ids:
-        description: 'AOSS tests the eks-aoss-* jobs run: 0021 (Classic collections), 0024 (NextGen collection routing)'
+        description: 'AOSS tests the eks-aoss-* jobs run: 0021 (Classic), 0024 (NextGen routing), 0025 (NextGen direct)'
         type: choice
         options:
-          - '0021,0024'
+          - '0021,0024,0025'
           - '0021'
           - '0024'
-        default: '0021,0024'
+          - '0025'
+          - '0024,0025'
+        default: '0021,0024,0025'
   # Only `labeled`: a maintainer's label approves the PR's code at that moment (aws-ci-pr-gate.yml).
   pull_request_target:
     types: [labeled]
@@ -350,7 +352,7 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aosss --test-ids ${{ inputs.aoss-test-ids || ''0021,0024'' }}'
+      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aosss --test-ids ${{ inputs.aoss-test-ids || ''0021,0024,0025'' }}'
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
@@ -377,7 +379,7 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aosst --test-ids ${{ inputs.aoss-test-ids || ''0021,0024'' }}'
+      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aosst --test-ids ${{ inputs.aoss-test-ids || ''0021,0024,0025'' }}'
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
@@ -404,7 +406,7 @@ jobs:
       commit: ${{ needs.resolve-ref.outputs.commit }}
       scripts-ref: ${{ needs.resolve-ref.outputs.scripts_ref }}
       setup-env: true
-      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aossv --test-ids ${{ inputs.aoss-test-ids || ''0021,0024'' }}'
+      run: '"$CI_AWS"/tests/eks-aoss-test.sh --stage-base aossv --test-ids ${{ inputs.aoss-test-ids || ''0021,0024,0025'' }}'
       cleanup: '"$CI_AWS"/shared/eks-cleanup.sh'
       run-timeout-minutes: 180
       timeout-minutes: 270
